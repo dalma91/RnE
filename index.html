@@ -12,6 +12,7 @@
         label { font-weight: bold; display: inline-block; width: 120px; }
         select { padding: 10px; font-size: 16px; width: 100%; max-width: 500px; border-radius: 4px; border: 1px solid #ccc; }
         .info-display { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 16px; line-height: 1.8; }
+        .teacher-status { font-weight: bold; color: #2c3e50; font-size: 18px; margin-bottom: 8px; }
         .meta-info { background-color: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 4px solid #3498db; margin-bottom: 10px; }
         .meta-item { margin-bottom: 5px; }
         .meta-label { font-weight: bold; color: #34495e; }
@@ -30,14 +31,24 @@
     
     <div class="control-box">
         <div class="select-group">
-            <label for="subjectSelect">📘 연구 주제 선택:</label>
-            <select id="subjectSelect" disabled>
+            <label for="teacherSelect">👨‍🏫 지도교사 선택:</label>
+            <select id="teacherSelect" disabled>
                 <option value="">데이터 로딩 중...</option>
             </select>
         </div>
 
-        <div class="info-display">
+        <div class="select-group hidden" id="subjectSelectContainer">
+            <label for="subjectSelect">📘 세부 주제 선택:</label>
+            <select id="subjectSelect">
+                <option value="">-- 주제를 선택하세요 --</option>
+            </select>
+        </div>
+
+        <div class="info-display" id="infoDisplay">
+            <div class="teacher-status" id="teacherStatus">교사를 선택해 주세요.</div>
+            
             <div id="metaInfoBox" class="meta-info hidden">
+                <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
                 <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
                 <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
             </div>
@@ -60,7 +71,6 @@
     </table>
 
     <script>
-        // 올려주신 시트 주소 기반 데이터 무조건 긁어오는 다이렉트 쿼리 주소
         const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE';
         const vizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
 
@@ -78,7 +88,6 @@
         fetch(vizUrl)
             .then(res => res.text())
             .then(text => {
-                // 구글 gviz 특유의 JSONP 껍데기를 벗겨내고 순수 JSON만 추출하는 안전장치
                 const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\x00-\x7F]+)\);/);
                 if (!match) throw new Error("데이터 구조 파싱 실패");
                 
@@ -86,7 +95,11 @@
                 const table = obj.table;
                 const headers = table.cols.map(col => col.label ? col.label.trim() : '');
                 
-                allData = table.rows.map(row => {
+                let currentTeacher = "";
+                let currentSubject = "";
+                let currentMeta = {};
+
+                table.rows.forEach(row => {
                     let item = {};
                     row.c.forEach((cell, idx) => {
                         const head = headers[idx];
@@ -94,59 +107,132 @@
                             item[head] = cell && cell.v !== null ? String(cell.v).trim() : '';
                         }
                     });
-                    return item;
-                }).filter(row => row['연구 주제']);
+
+                    // 빈 셀 병합 데이터 채우기 보정 로직
+                    if (item['지도교사']) { currentTeacher = item['지도교사']; }
+                    else { item['지도교사'] = currentTeacher; }
+
+                    if (item['연구 주제']) { currentSubject = item['연구 주제']; }
+                    else { item['연구 주제'] = currentSubject; }
+
+                    if (item['과제 분야']) {
+                        currentMeta = {
+                            '과제 분야': item['과제 분야'],
+                            '조': item['조']
+                        };
+                    } else {
+                        Object.assign(item, currentMeta);
+                    }
+
+                    if (item['연구 주제']) {
+                        allData.push(item);
+                    }
+                });
 
                 initApp();
             })
             .catch(err => {
-                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">시트 연동 실패. 구글 시트 상단의 [공유] 버튼을 눌러 "링크가 있는 모든 사용자에게 공개(뷰어)"로 되어있는지 확인해 주세요.</td></tr>`;
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">시트 연동 실패. 구글 시트 상단의 [공유] 권한을 다시 한 번 확인해 주세요.</td></tr>`;
                 console.error(err);
             });
 
         function initApp() {
-            const subjectSelect = document.getElementById('subjectSelect');
+            const teacherSelect = document.getElementById('teacherSelect');
             if (allData.length === 0) return;
 
-            subjectSelect.innerHTML = '<option value="">-- 예산을 조회할 연구 주제를 선택하세요 --</option>';
-            allData.forEach(row => {
-                const sub = row['연구 주제'];
-                if(sub) {
+            // 고유한 지도교사 목록 추출 및 정렬
+            const teachers = [...new Set(allData.map(item => item['지도교사']))].filter(Boolean).sort();
+            
+            teacherSelect.innerHTML = '<option value="">-- 교사를 선택하세요 --</option>';
+            teachers.forEach(t => {
+                const opt = document.createElement('option');
+                opt.value = t;
+                opt.textContent = t;
+                teacherSelect.appendChild(opt);
+            });
+            teacherSelect.disabled = false;
+            
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
+
+            teacherSelect.addEventListener('change', handleTeacherChange);
+            document.getElementById('subjectSelect').addEventListener('change', handleSubjectChange);
+        }
+
+        function handleTeacherChange() {
+            const selectedTeacher = document.getElementById('teacherSelect').value;
+            const container = document.getElementById('subjectSelectContainer');
+            const subjectSelect = document.getElementById('subjectSelect');
+            const teacherStatus = document.getElementById('teacherStatus');
+            const metaInfoBox = document.getElementById('metaInfoBox');
+            
+            if (!selectedTeacher) {
+                resetUI();
+                return;
+            }
+
+            const teacherRows = allData.filter(item => item['지도교사'] === selectedTeacher);
+            const subjects = [...new Set(teacherRows.map(item => item['연구 주제']))].filter(Boolean);
+            const taskCount = subjects.length;
+
+            teacherStatus.innerHTML = `👨‍🏫 ${selectedTeacher} (${taskCount}개 과제)`;
+
+            if (taskCount === 1) {
+                container.classList.add('hidden');
+                displayMetaInfo(teacherRows[0], subjects[0]);
+                renderTable(teacherRows[0]);
+            } else if (taskCount >= 2) {
+                metaInfoBox.classList.add('hidden');
+                
+                subjectSelect.innerHTML = '<option value="">-- 세부 주제를 선택하세요 --</option>';
+                subjects.forEach(sub => {
                     const opt = document.createElement('option');
                     opt.value = sub;
                     opt.textContent = sub;
                     subjectSelect.appendChild(opt);
-                }
-            });
-            subjectSelect.disabled = false;
-            
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">연구 주제를 선택하면 항목별 상세 예산 내역이 표시됩니다.</td></tr>';
-            subjectSelect.addEventListener('change', handleSubjectChange);
+                });
+                
+                container.classList.remove('hidden');
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
+            } else {
+                metaInfoBox.classList.add('hidden');
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">편성된 예산 내역이 없습니다.</td></tr>';
+            }
         }
 
         function handleSubjectChange() {
+            const selectedTeacher = document.getElementById('teacherSelect').value;
             const selectedSubject = document.getElementById('subjectSelect').value;
             const metaInfoBox = document.getElementById('metaInfoBox');
-            const tableBody = document.getElementById('tableBody');
 
             if (!selectedSubject) {
                 metaInfoBox.classList.add('hidden');
-                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">연구 주제를 선택하면 항목별 상세 예산 내역이 표시됩니다.</td></tr>';
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
                 return;
             }
 
-            const targetRow = allData.find(item => item['연구 주제'] === selectedSubject);
-            if (!targetRow) return;
+            const targetRow = allData.find(item => item['지도교사'] === selectedTeacher && item['연구 주제'] === selectedSubject);
 
-            document.getElementById('infoCategory').textContent = targetRow['과제 분야'] || '-';
-            document.getElementById('infoGroup').textContent = targetRow['조'] ? `${targetRow['조']}조` : '-';
+            if (targetRow) {
+                displayMetaInfo(targetRow, selectedSubject);
+                renderTable(targetRow);
+            }
+        }
+
+        function displayMetaInfo(row, subjectTitle) {
+            const metaInfoBox = document.getElementById('metaInfoBox');
+            document.getElementById('infoSubject').textContent = subjectTitle;
+            document.getElementById('infoCategory').textContent = row['과제 분야'] || '-';
+            document.getElementById('infoGroup').textContent = row['조'] ? `${row['조']}조` : '-';
             metaInfoBox.classList.remove('hidden');
+        }
 
+        function renderTable(row) {
+            const tableBody = document.getElementById('tableBody');
             let html = '';
             let index = 1;
 
             budgetColumns.forEach(colName => {
-                const costStr = targetRow[colName] || '0';
+                const costStr = row[colName] || '0';
                 const cost = parseInt(String(costStr).replace(/[^0-9]/g, '')) || 0;
 
                 html += `
@@ -161,6 +247,13 @@
             });
 
             tableBody.innerHTML = html;
+        }
+
+        function resetUI() {
+            document.getElementById('subjectSelectContainer').classList.add('hidden');
+            document.getElementById('metaInfoBox').classList.add('hidden');
+            document.getElementById('teacherStatus').textContent = '교사를 선택해 주세요.';
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
         }
     </script>
 </body>
