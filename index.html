@@ -10,17 +10,17 @@
         .control-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .select-group { margin-bottom: 15px; }
         label { font-weight: bold; display: inline-block; width: 120px; }
-        select { padding: 10px; font-size: 16px; width: 300px; border-radius: 4px; border: 1px solid #ccc; }
+        select { padding: 10px; font-size: 16px; width: 450px; border-radius: 4px; border: 1px solid #ccc; max-width: 100%; }
         .info-display { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 16px; line-height: 1.8; }
-        .teacher-status { font-weight: bold; color: #2c3e50; font-size: 18px; margin-bottom: 8px; }
         .meta-info { background-color: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 4px solid #3498db; margin-bottom: 10px; }
         .meta-item { margin-bottom: 5px; }
         .meta-label { font-weight: bold; color: #34495e; }
-        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; margin-top: 15px; }
         th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #34495e; color: white; }
         tr:hover { background-color: #f1f1f1; }
-        .loading { font-weight: bold; color: #3498db; }
+        .loading { font-weight: bold; color: #3498db; text-align: center; }
+        .num-col { text-align: right; font-variant-numeric: tabular-nums; }
         .hidden { display: none; }
     </style>
 </head>
@@ -30,25 +30,16 @@
     
     <div class="control-box">
         <div class="select-group">
-            <label for="teacherSelect">👨‍🏫 지도교사 선택:</label>
-            <select id="teacherSelect" disabled>
+            <label for="subjectSelect">📘 연구 주제 선택:</label>
+            <select id="subjectSelect" disabled>
                 <option value="">데이터 로딩 중...</option>
             </select>
         </div>
 
-        <div class="select-group hidden" id="subjectSelectContainer">
-            <label for="subjectSelect">📘 세부 주제 선택:</label>
-            <select id="subjectSelect">
-                <option value="">-- 주제를 선택하세요 --</option>
-            </select>
-        </div>
-
-        <div class="info-display" id="infoDisplay">
-            <div class="teacher-status" id="teacherStatus">교사를 선택해 주세요.</div>
-            
+        <div class="info-display">
             <div id="metaInfoBox" class="meta-info hidden">
-                <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
-                <div class="meta-item"><span class="meta-label">👥 참여 학생:</span> <span id="infoStudents">-</span></div>
+                <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
+                <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
             </div>
             </div>
     </div>
@@ -56,23 +47,33 @@
     <table>
         <thead>
             <tr>
-                <th>지도교사</th>
-                <th>산출내역</th>
-                <th>금액</th>
+                <th>순</th>
+                <th>예산 항목 (비목)</th>
+                <th class="num-col">배정 금액</th>
             </tr>
         </thead>
         <tbody id="tableBody">
             <tr>
-                <td colspan="3" class="loading" style="text-align:center;">구글 시트에서 데이터를 가져오는 중입니다...</td>
+                <td colspan="3" class="loading">구글 시트에서 예산 데이터를 분석하는 중입니다...</td>
             </tr>
         </tbody>
     </table>
 
     <script>
-        const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE'; 
+        // 검증된 구글 다이렉트 CSV 내보내기 방식 원복
+        const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE';
         const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=0`;
 
         let allData = [];
+        const budgetColumns = [
+            '시약·재료 구입비 및 전산 처리·관리비',
+            '외부전문기술활용비',
+            '출장여비',
+            '수수료 및 제세공과금',
+            '인쇄비·유인물비 및 도서구입비',
+            '회의비',
+            '연구활동원가'
+        ];
 
         function parseCSV(text) {
             let lines = [];
@@ -109,34 +110,17 @@
                 if(parsedLines.length < 2) return;
 
                 const headers = parsedLines[0].map(h => h.trim());
-                let currentTeacher = "";
-                let currentSubject = "";
-                let currentMeta = {};
-
+                
                 for(let i = 1; i < parsedLines.length; i++) {
                     let rowData = parsedLines[i];
+                    if(rowData.length < headers.length) continue;
+                    
                     let obj = {};
                     headers.forEach((header, index) => {
                         obj[header] = rowData[index] ? rowData[index].trim() : '';
                     });
-
-                    if (obj['지도교사']) { currentTeacher = obj['지도교사']; }
-                    else { obj['지도교사'] = currentTeacher; }
-
-                    if (obj['연구 주제']) { currentSubject = obj['연구 주제']; }
-                    else { obj['연구 주제'] = currentSubject; }
-
-                    if (obj['성명1']) {
-                        currentMeta = {};
-                        for(let j = 1; j <= 4; j++) {
-                            if(obj[`성명${j}`]) currentMeta[`성명${j}`] = obj[`성명${j}`];
-                            if(obj[`학번${j}`]) currentMeta[`학번${j}`] = obj[`학번${j}`];
-                        }
-                    } else {
-                        Object.assign(obj, currentMeta);
-                    }
-
-                    if (obj['지도교사']) {
+                    
+                    if(obj['연구 주제']) {
                         allData.push(obj);
                     }
                 }
@@ -148,142 +132,61 @@
             });
 
         function initApp() {
-            const teacherSelect = document.getElementById('teacherSelect');
+            const subjectSelect = document.getElementById('subjectSelect');
             if (allData.length === 0) return;
 
-            const teachers = [...new Set(allData.map(item => item['지도교사']))].filter(Boolean).sort();
+            const subjects = allData.map(item => item['연구 주제']).filter(Boolean);
             
-            teacherSelect.innerHTML = '<option value="">-- 교사를 선택하세요 --</option>';
-            teachers.forEach(t => {
+            subjectSelect.innerHTML = '<option value="">-- 예산을 조회할 연구 주제를 선택하세요 --</option>';
+            subjects.forEach(sub => {
                 const opt = document.createElement('option');
-                opt.value = t;
-                opt.textContent = t;
-                teacherSelect.appendChild(opt);
+                opt.value = sub;
+                opt.textContent = sub;
+                subjectSelect.appendChild(opt);
             });
-            teacherSelect.disabled = false;
+            subjectSelect.disabled = false;
             
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
-
-            teacherSelect.addEventListener('change', handleTeacherChange);
-            document.getElementById('subjectSelect').addEventListener('change', handleSubjectChange);
-        }
-
-        function handleTeacherChange() {
-            const selectedTeacher = document.getElementById('teacherSelect').value;
-            const container = document.getElementById('subjectSelectContainer');
-            const subjectSelect = document.getElementById('subjectSelect');
-            const teacherStatus = document.getElementById('teacherStatus');
-            const metaInfoBox = document.getElementById('metaInfoBox');
-            
-            if (!selectedTeacher) {
-                resetUI();
-                return;
-            }
-
-            const teacherRows = allData.filter(item => item['지도교사'] === selectedTeacher);
-            const subjects = [...new Set(teacherRows.map(item => item['연구 주제']))].filter(Boolean);
-            const taskCount = subjects.length;
-
-            teacherStatus.innerHTML = `👨‍🏫 ${selectedTeacher} (${taskCount}개 과제)`;
-
-            if (taskCount === 1) {
-                container.classList.add('hidden');
-                displayMetaInfo(teacherRows[0], subjects[0]);
-                renderTable(teacherRows);
-            } else if (taskCount >= 2) {
-                metaInfoBox.classList.add('hidden');
-                
-                subjectSelect.innerHTML = '<option value="">-- 세부 주제를 선택하세요 --</option>';
-                subjects.forEach(sub => {
-                    const opt = document.createElement('option');
-                    opt.value = sub;
-                    opt.textContent = sub;
-                    subjectSelect.appendChild(opt);
-                });
-                
-                container.classList.remove('hidden');
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
-            } else {
-                metaInfoBox.classList.add('hidden');
-                renderTable([]);
-            }
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">연구 주제를 선택하면 항목별 상세 예산 내역이 표시됩니다.</td></tr>';
+            subjectSelect.addEventListener('change', handleSubjectChange);
         }
 
         function handleSubjectChange() {
-            const selectedTeacher = document.getElementById('teacherSelect').value;
             const selectedSubject = document.getElementById('subjectSelect').value;
             const metaInfoBox = document.getElementById('metaInfoBox');
+            const tableBody = document.getElementById('tableBody');
 
             if (!selectedSubject) {
                 metaInfoBox.classList.add('hidden');
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">연구 주제를 선택하면 항목별 상세 예산 내역이 표시됩니다.</td></tr>';
                 return;
             }
 
-            const filteredRows = allData.filter(item => item['지도교사'] === selectedTeacher && item['연구 주제'] === selectedSubject);
+            const targetRow = allData.find(item => item['연구 주제'] === selectedSubject);
+            if (!targetRow) return;
 
-            displayMetaInfo(filteredRows[0], selectedSubject);
-            renderTable(filteredRows);
-        }
-
-        function displayMetaInfo(row, subjectTitle) {
-            const metaInfoBox = document.getElementById('metaInfoBox');
-            const infoSubject = document.getElementById('infoSubject');
-            const infoStudents = document.getElementById('infoStudents');
-
-            if (!row) return;
-
-            infoSubject.textContent = subjectTitle;
-
-            let studentPairs = [];
-            for (let i = 1; i <= 4; i++) {
-                const nameKey = row[`성명${i}`];
-                const idKey = row[`학번${i}`];
-
-                if (nameKey) {
-                    studentPairs.push(idKey ? `${nameKey}(${idKey})` : nameKey);
-                }
-            }
-
-            infoStudents.textContent = studentPairs.length > 0 ? studentPairs.join(', ') : '등록된 학생 정보가 없습니다.';
+            document.getElementById('infoCategory').textContent = targetRow['과제 분야'] || '-';
+            document.getElementById('infoGroup').textContent = targetRow['조'] ? `${targetRow['조']}조` : '-';
             metaInfoBox.classList.remove('hidden');
-        }
-
-        function renderTable(rows) {
-            const tableBody = document.getElementById('tableBody');
-            
-            if (rows.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">편성된 내역이 없습니다.</td></tr>';
-                return;
-            }
 
             let html = '';
+            let index = 1;
 
-            rows.forEach(item => {
-                const name = item['지도교사'] || '';
-                const desc = item['산출내역'] || '-';
-                const costStr = item['금액'] || '0';
-                
+            budgetColumns.forEach(colName => {
+                const costStr = targetRow[colName] || '0';
                 const cost = parseInt(String(costStr).replace(/[^0-9]/g, '')) || 0;
 
-                // ❌ '연구 주제' td 열을 완전히 누락시켜 제거함
                 html += `
                     <tr>
-                        <td>${name}</td>
-                        <td>${desc}</td>
-                        <td>${cost.toLocaleString()}원</td>
+                        <td>${index++}</td>
+                        <td><strong>${colName}</strong></td>
+                        <td class="num-col" style="${cost > 0 ? 'font-weight:bold; color:#2c3e50;' : 'color:#aaa;'}">
+                            ${cost.toLocaleString()}원
+                        </td>
                     </tr>
                 `;
             });
 
             tableBody.innerHTML = html;
-        }
-
-        function resetUI() {
-            document.getElementById('subjectSelectContainer').classList.add('hidden');
-            document.getElementById('metaInfoBox').classList.add('hidden');
-            document.getElementById('teacherStatus').textContent = '교사를 선택해 주세요.';
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
         }
     </script>
 </body>
