@@ -50,9 +50,9 @@
             <div id="metaInfoBox" class="meta-info hidden">
                 <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
                 <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
-                <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
+                <div class="meta-item"><span class="meta-label">👥 참여 학생:</span> <span id="infoStudents">-</span></div>
             </div>
-            </div>
+        </div>
     </div>
 
     <table>
@@ -108,7 +108,7 @@
                         }
                     });
 
-                    // 빈 셀 병합 데이터 채우기 보정 로직
+                    // 병합된 셀 데이터 보정 로직
                     if (item['지도교사']) { currentTeacher = item['지도교사']; }
                     else { item['지도교사'] = currentTeacher; }
 
@@ -117,8 +117,7 @@
 
                     if (item['과제 분야']) {
                         currentMeta = {
-                            '과제 분야': item['과제 분야'],
-                            '조': item['조']
+                            '과제 분야': item['과제 분야']
                         };
                     } else {
                         Object.assign(item, currentMeta);
@@ -132,7 +131,7 @@
                 initApp();
             })
             .catch(err => {
-                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">시트 연동 실패. 구글 시트 상단의 [공유] 권한을 다시 한 번 확인해 주세요.</td></tr>`;
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">시트 연동 실패.</td></tr>`;
                 console.error(err);
             });
 
@@ -140,7 +139,6 @@
             const teacherSelect = document.getElementById('teacherSelect');
             if (allData.length === 0) return;
 
-            // 고유한 지도교사 목록 추출 및 정렬
             const teachers = [...new Set(allData.map(item => item['지도교사']))].filter(Boolean).sort();
             
             teacherSelect.innerHTML = '<option value="">-- 교사를 선택하세요 --</option>';
@@ -193,9 +191,6 @@
                 
                 container.classList.remove('hidden');
                 document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
-            } else {
-                metaInfoBox.classList.add('hidden');
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">편성된 예산 내역이 없습니다.</td></tr>';
             }
         }
 
@@ -222,7 +217,22 @@
             const metaInfoBox = document.getElementById('metaInfoBox');
             document.getElementById('infoSubject').textContent = subjectTitle;
             document.getElementById('infoCategory').textContent = row['과제 분야'] || '-';
-            document.getElementById('infoGroup').textContent = row['조'] ? `${row['조']}조` : '-';
+            
+            // 👥 성명1(학번1), 성명2(학번2) 동적 파싱 및 결합 로직
+            let studentList = [];
+            for (let i = 1; i <= 4; i++) {
+                const name = row[`성명${i}`];
+                const studentId = row[`학번${i}`];
+                if (name) {
+                    if (studentId) {
+                        studentList.push(`${name}(${studentId})`);
+                    } else {
+                        studentList.push(name);
+                    }
+                }
+            }
+            
+            document.getElementById('infoStudents').textContent = studentList.length > 0 ? studentList.join(', ') : '등록된 학생 정보가 없습니다.';
             metaInfoBox.classList.remove('hidden');
         }
 
