@@ -1,20 +1,167 @@
-function doGet() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("팀별예산");
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0].map(h => String(h).trim());
-  const jsonArray = [];
-  
-  for (let i = 1; i < data.length; i++) {
-    let row = data[i];
-    let obj = {};
-    headers.forEach((header, index) => {
-      obj[header] = row[index];
-    });
-    if(obj['연구 주제']) {
-      jsonArray.push(obj);
-    }
-  }
-  
-  return ContentService.createTextOutput(JSON.stringify(jsonArray))
-    .setMimeType(ContentService.MimeType.JSON);
-}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>지도교사별 예산 편성 내역 조회</title>
+    <style>
+        body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f9f9f9; color: #333; }
+        h2 { color: #2c3e50; }
+        .control-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .select-group { margin-bottom: 15px; }
+        label { font-weight: bold; display: inline-block; width: 120px; }
+        select { padding: 10px; font-size: 16px; width: 100%; max-width: 500px; border-radius: 4px; border: 1px solid #ccc; }
+        .info-display { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 16px; line-height: 1.8; }
+        .meta-info { background-color: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 4px solid #3498db; margin-bottom: 10px; }
+        .meta-item { margin-bottom: 5px; }
+        .meta-label { font-weight: bold; color: #34495e; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; margin-top: 15px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #34495e; color: white; }
+        tr:hover { background-color: #f1f1f1; }
+        .loading { font-weight: bold; color: #3498db; text-align: center; }
+        .num-col { text-align: right; font-variant-numeric: tabular-nums; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <h2>💰 지도교사별 예산 편성 내역</h2>
+    
+    <div class="control-box">
+        <div class="select-group">
+            <label for="subjectSelect">📘 연구 주제 선택:</label>
+            <select id="subjectSelect" disabled>
+                <option value="">데이터 로딩 중...</option>
+            </select>
+        </div>
+
+        <div class="info-display">
+            <div id="metaInfoBox" class="meta-info hidden">
+                <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
+                <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
+            </div>
+            </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>순</th>
+                <th>예산 항목 (비목)</th>
+                <th class="num-col">배정 금액</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            <tr>
+                <td colspan="3" class="loading">구글 시트에서 데이터를 안전하게 파싱하는 중...</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <script>
+        // 올려주신 시트 주소 기반 데이터 무조건 긁어오는 다이렉트 쿼리 주소
+        const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE';
+        const vizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
+
+        let allData = [];
+        const budgetColumns = [
+            '시약·재료 구입비 및 전산 처리·관리비',
+            '외부전문기술활용비',
+            '출장여비',
+            '수수료 및 제세공과금',
+            '인쇄비·유인물비 및 도서구입비',
+            '회의비',
+            '연구활동원가'
+        ];
+
+        fetch(vizUrl)
+            .then(res => res.text())
+            .then(text => {
+                // 구글 gviz 특유의 JSONP 껍데기를 벗겨내고 순수 JSON만 추출하는 안전장치
+                const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\x00-\x7F]+)\);/);
+                if (!match) throw new Error("데이터 구조 파싱 실패");
+                
+                const obj = JSON.parse(match[1]);
+                const table = obj.table;
+                const headers = table.cols.map(col => col.label ? col.label.trim() : '');
+                
+                allData = table.rows.map(row => {
+                    let item = {};
+                    row.c.forEach((cell, idx) => {
+                        const head = headers[idx];
+                        if (head) {
+                            item[head] = cell && cell.v !== null ? String(cell.v).trim() : '';
+                        }
+                    });
+                    return item;
+                }).filter(row => row['연구 주제']);
+
+                initApp();
+            })
+            .catch(err => {
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">시트 연동 실패. 구글 시트 상단의 [공유] 버튼을 눌러 "링크가 있는 모든 사용자에게 공개(뷰어)"로 되어있는지 확인해 주세요.</td></tr>`;
+                console.error(err);
+            });
+
+        function initApp() {
+            const subjectSelect = document.getElementById('subjectSelect');
+            if (allData.length === 0) return;
+
+            subjectSelect.innerHTML = '<option value="">-- 예산을 조회할 연구 주제를 선택하세요 --</option>';
+            allData.forEach(row => {
+                const sub = row['연구 주제'];
+                if(sub) {
+                    const opt = document.createElement('option');
+                    opt.value = sub;
+                    opt.textContent = sub;
+                    subjectSelect.appendChild(opt);
+                }
+            });
+            subjectSelect.disabled = false;
+            
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">연구 주제를 선택하면 항목별 상세 예산 내역이 표시됩니다.</td></tr>';
+            subjectSelect.addEventListener('change', handleSubjectChange);
+        }
+
+        function handleSubjectChange() {
+            const selectedSubject = document.getElementById('subjectSelect').value;
+            const metaInfoBox = document.getElementById('metaInfoBox');
+            const tableBody = document.getElementById('tableBody');
+
+            if (!selectedSubject) {
+                metaInfoBox.classList.add('hidden');
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">연구 주제를 선택하면 항목별 상세 예산 내역이 표시됩니다.</td></tr>';
+                return;
+            }
+
+            const targetRow = allData.find(item => item['연구 주제'] === selectedSubject);
+            if (!targetRow) return;
+
+            document.getElementById('infoCategory').textContent = targetRow['과제 분야'] || '-';
+            document.getElementById('infoGroup').textContent = targetRow['조'] ? `${targetRow['조']}조` : '-';
+            metaInfoBox.classList.remove('hidden');
+
+            let html = '';
+            let index = 1;
+
+            budgetColumns.forEach(colName => {
+                const costStr = targetRow[colName] || '0';
+                const cost = parseInt(String(costStr).replace(/[^0-9]/g, '')) || 0;
+
+                html += `
+                    <tr>
+                        <td>${index++}</td>
+                        <td><strong>${colName}</strong></td>
+                        <td class="num-col" style="${cost > 0 ? 'font-weight:bold; color:#2c3e50;' : 'color:#aaa;'}">
+                            ${cost.toLocaleString()}원
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tableBody.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
