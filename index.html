@@ -50,7 +50,7 @@
         const sheetName = '팀별예산'; // 실제 시트 하단 탭 이름으로 변경 필수
         
         // 구글 시트 데이터를 JSON으로 바로 바꿔주는 오픈소스 API 주소 활용
-        const url = `https://opensheet.elk.sh/${sheetId}/${sheetName}`;
+        const url = `https://opensheet.elk.sh/${sheetId}/${encodeURIComponent(sheetName)}`;
 
         let allData = [];
 
