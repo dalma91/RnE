@@ -7,20 +7,14 @@
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f9f9f9; color: #333; }
         h2 { color: #2c3e50; }
-        .control-box { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .select-group { margin-bottom: 15px; }
-        label { font-weight: bold; display: inline-block; width: 120px; }
-        select { padding: 10px; font-size: 16px; width: 300px; border-radius: 4px; border: 1px solid #ccc; }
-        .info-display { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 18px; line-height: 1.6; }
-        .teacher-status { font-weight: bold; color: #2c3e50; }
-        .subject-title { font-weight: bold; color: #2980b9; }
+        .control-box { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        select { padding: 10px; font-size: 16px; width: 250px; border-radius: 4px; border: 1px solid #ccc; }
         .total-amount { margin-top: 10px; font-size: 18px; font-weight: bold; color: #e74c3c; }
         table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.05); border-radius: 8px; overflow: hidden; }
         th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background-color: #34495e; color: white; }
         tr:hover { background-color: #f1f1f1; }
         .loading { font-weight: bold; color: #3498db; }
-        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -28,52 +22,39 @@
     <h2>💰 지도교사별 예산 편성 내역</h2>
     
     <div class="control-box">
-        <div class="select-group">
-            <label for="teacherSelect">👨‍🏫 지도교사 선택:</label>
-            <select id="teacherSelect" disabled>
-                <option value="">데이터 로딩 중...</option>
-            </select>
-        </div>
-
-        <div class="select-group hidden" id="subjectSelectContainer">
-            <label for="subjectSelect">📘 세부 주제 선택:</label>
-            <select id="subjectSelect">
-                <option value="">-- 주제를 선택하세요 --</option>
-            </select>
-        </div>
-
-        <div class="info-display" id="infoDisplay">
-            <div class="teacher-status" id="teacherStatus">교사를 선택해 주세요.</div>
-            <div class="total-amount" id="totalAmount">선택된 예산 총액: 0원</div>
-        </div>
+        <label for="teacherSelect"><strong>👨‍🏫 지도교사 선택: </strong></label>
+        <select id="teacherSelect" disabled>
+            <option value="">데이터 로딩 중...</option>
+        </select>
+        <div class="total-amount" id="totalAmount">선택된 교사 총액: 0원</div>
     </div>
 
     <table>
         <thead>
             <tr>
                 <th>지도교사</th>
-                <th>과제명(주제)</th>
                 <th>산출내역 (비목 목록)</th>
                 <th>금액</th>
             </tr>
         </thead>
         <tbody id="tableBody">
             <tr>
-                <td colspan="4" class="loading" style="text-align:center;">구글 시트에서 데이터를 가져오는 중입니다...</td>
+                <td colspan="3" class="loading" style="text-align:center;">구글 시트에서 데이터를 가져오는 중입니다...</td>
             </tr>
         </tbody>
     </table>
 
     <script>
-        // 🌟 [설정 값] 본인의 구글 시트 ID와 탭 이름 확인 🌟
+        // 🌟여기에 본인의 구글 시트 ID와 시트 탭 이름을 넣으세요🌟
         const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE'; 
-        const sheetName = '팀별예산'; 
+        const sheetName = 'Sheet1'; // 실제 시트 하단 탭 이름으로 변경 필수
         
-        const url = `https://opensheet.elk.sh/${sheetId}/${encodeURIComponent(sheetName)}`;
+        // 구글 시트 데이터를 JSON으로 바로 바꿔주는 오픈소스 API 주소 활용
+        const url = `https://opensheet.elk.sh/${sheetId}/${sheetName}`;
 
         let allData = [];
 
-        // 데이터 패치
+        // 데이터 가져오기
         fetch(url)
             .then(res => res.json())
             .then(data => {
@@ -81,16 +62,18 @@
                 initApp();
             })
             .catch(err => {
-                document.getElementById('tableBody').innerHTML = `<tr><td colspan="4" style="color:red; text-align:center;">데이터를 불러오지 못했습니다. 시트 설정이나 인터넷 연결을 확인하세요.</td></tr>`;
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">데이터를 불러오지 못했습니다. 시트 ID나 공유 설정을 확인하세요.</td></tr>`;
                 console.error(err);
             });
 
         function initApp() {
             const teacherSelect = document.getElementById('teacherSelect');
             
-            // 시트 헤더 유연하게 매칭 (지도교사 / 지도교사명)
+            // 1. 중복 없는 지도교사 목록 추출 (시트의 컬럼 헤더명이 '지도교사'라고 가정)
+            // 만약 헤더명이 다르면 ['지도교사'] 이 부분을 시트 헤더명과 똑같이 맞추세요.
             const teachers = [...new Set(allData.map(item => item['지도교사'] || item['지도교사명'] || Object.values(item)[0]))].filter(Boolean);
             
+            // 드롭다운 메뉴 채우기
             teacherSelect.innerHTML = '<option value="">-- 교사를 선택하세요 --</option>';
             teachers.forEach(t => {
                 const opt = document.createElement('option');
@@ -100,130 +83,53 @@
             });
             teacherSelect.disabled = false;
             
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사를 선택하면 내역이 표시됩니다.</td></tr>';
 
-            // 이벤트 바인딩
-            teacherSelect.addEventListener('change', handleTeacherChange);
-            document.getElementById('subjectSelect').addEventListener('change', handleSubjectChange);
+            // 이벤트 리스너 등록
+            teacherSelect.addEventListener('change', filterData);
         }
 
-        // 지도교사 선택 시 로직
-        function handleTeacherChange() {
+        function filterData() {
             const selectedTeacher = document.getElementById('teacherSelect').value;
-            const container = document.getElementById('subjectSelectContainer');
-            const subjectSelect = document.getElementById('subjectSelect');
-            const teacherStatus = document.getElementById('teacherStatus');
+            const tableBody = document.getElementById('tableBody');
+            const totalAmountEl = document.getElementById('totalAmount');
             
             if (!selectedTeacher) {
-                resetUI();
+                tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">교사를 선택하면 내역이 표시됩니다.</td></tr>';
+                totalAmountEl.textContent = '선택된 교사 총액: 0원';
                 return;
             }
 
-            // 해당 교사의 전체 행 필터링
-            const teacherRows = allData.filter(item => {
+            // 선택된 교사의 데이터만 필터링
+            // 컬럼 매핑 유연화 (헤더 이름이 '지도교사', '산출내역', '금액' 기준)
+            const filtered = allData.filter(item => {
                 const name = item['지도교사'] || item['지도교사명'] || Object.values(item)[0];
                 return name === selectedTeacher;
             });
 
-            // 해당 교사가 맡은 고유 과제(주제) 목록 추출
-            // 시트 헤더가 '과제명' 또는 '주제명' 또는 '연구과제명' 일 때를 대비
-            const subjects = [...new Set(teacherRows.map(item => item['과제명'] || item['주제명'] || item['연구과제명'] || item['과제'] || ''))].filter(Boolean);
-            const taskCount = subjects.length;
-
-            // 기본 표시: 교사이름 (*개 과제)
-            let statusHtml = `${selectedTeacher} (${taskCount}개 과제)`;
-
-            if (taskCount === 1) {
-                // [조건 1] 과제가 1개인 경우: 줄바꿈 후 주제명 표기, 목록 즉시 노출
-                container.classList.add('hidden'); // 주제 선택창 숨김
-                statusHtml += `<br><span class="subject-title">주제명: ${subjects[0]}</span>`;
-                teacherStatus.innerHTML = statusHtml;
-                
-                renderTable(teacherRows); // 즉시 테이블 렌더링
-            } else if (taskCount >= 2) {
-                // [조건 2] 과제가 2개 이상인 경우: 주제 선택 드롭다운 오픈
-                teacherStatus.innerHTML = statusHtml;
-                
-                subjectSelect.innerHTML = '<option value="">-- 세부 주제를 선택하세요 --</option>';
-                subjects.forEach(sub => {
-                    const opt = document.createElement('option');
-                    opt.value = sub;
-                    opt.textContent = sub;
-                    subjectSelect.appendChild(opt);
-                });
-                
-                container.classList.remove('hidden'); // 주제 선택창 노출
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
-                document.getElementById('totalAmount').textContent = '선택된 예산 총액: 0원';
-            } else {
-                teacherStatus.innerHTML = `${selectedTeacher} (등록된 과제 없음)`;
-                renderTable([]);
-            }
-        }
-
-        // 2개 이상일 때, 주제 드롭다운 선택 시 로직
-        function handleSubjectChange() {
-            const selectedTeacher = document.getElementById('teacherSelect').value;
-            const selectedSubject = document.getElementById('subjectSelect').value;
-
-            if (!selectedSubject) {
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
-                document.getElementById('totalAmount').textContent = '선택된 예산 총액: 0원';
-                return;
-            }
-
-            // 교사와 주제가 모두 일치하는 데이터만 필터링
-            const filteredRows = allData.filter(item => {
-                const name = item['지도교사'] || item['지도교사명'] || Object.values(item)[0];
-                const sub = item['과제명'] || item['주제명'] || item['연구과제명'] || item['과제'] || '';
-                return name === selectedTeacher && sub === selectedSubject;
-            });
-
-            renderTable(filteredRows);
-        }
-
-        // 최종 테이블 출력 및 합계 계산 함수
-        function renderTable(rows) {
-            const tableBody = document.getElementById('tableBody');
-            const totalAmountEl = document.getElementById('totalAmount');
-            
-            if (rows.length === 0) {
-                tableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;">편성된 내역이 없습니다.</td></tr>';
-                totalAmountEl.textContent = '선택된 예산 총액: 0원';
-                return;
-            }
-
             let html = '';
             let total = 0;
 
-            rows.forEach(item => {
-                const name = item['지도교사'] || item['지도교사명'] || '';
-                const sub = item['과제명'] || item['주제명'] || item['연구과제명'] || '';
+            filtered.forEach(item => {
+                // 구글 시트 컬럼명과 매칭 (틀릴 경우를 대비해 유연하게 매칭 처리)
                 const desc = item['산출내역'] || item['내역'] || '';
                 const costStr = item['금액'] || item['예산'] || '0';
                 
+                // 금액 숫자 변환 (콤마 제거 등)
                 const cost = parseInt(costStr.replace(/[^0-9]/g, '')) || 0;
                 total += cost;
 
                 html += `
                     <tr>
-                        <td>${name}</td>
-                        <td>${sub}</td>
+                        <td>${selectedTeacher}</td>
                         <td>${desc}</td>
                         <td>${cost.toLocaleString()}원</td>
                     </tr>
                 `;
             });
 
-            tableBody.innerHTML = html;
-            totalAmountEl.textContent = `선택된 예산 총액: ${total.toLocaleString()}원`;
-        }
-
-        function resetUI() {
-            document.getElementById('subjectSelectContainer').classList.add('hidden');
-            document.getElementById('teacherStatus').textContent = '교사를 선택해 주세요.';
-            document.getElementById('totalAmount').textContent = '선택된 예산 총액: 0원';
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
+            tableBody.innerHTML = html || '<tr><td colspan="3" style="text-align:center;">편성된 내역이 없습니다.</td></tr>';
+            totalAmountEl.textContent = `선택된 교사 총액: ${total.toLocaleString()}원`;
         }
     </script>
 </body>
