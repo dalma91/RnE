@@ -73,6 +73,7 @@
     </table>
 
     <script>
+        // 단일 시트 설정
         const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE'; 
         const sheetName = '팀별예산'; 
         
@@ -83,7 +84,14 @@
         fetch(url)
             .then(res => res.json())
             .then(data => {
-                allData = data;
+                // 데이터 트림 (공백 자동제거)
+                allData = data.map(row => {
+                    let cleaned = {};
+                    for (let key in row) {
+                        cleaned[key.trim()] = typeof row[key] === 'string' ? row[key].trim() : row[key];
+                    }
+                    return cleaned;
+                });
                 initApp();
             })
             .catch(err => {
@@ -91,9 +99,27 @@
                 console.error(err);
             });
 
+        // 컬럼 헤더 자동 매칭 유틸 함수들
+        function getTeacherKey(row) {
+            return '지도교사' in row ? '지도교사' : ('지도교사명' in row ? '지도교사명' : Object.keys(row)[0]);
+        }
+
+        function getSubjectKey(row) {
+            if ('연구주제' in row) return '연구주제';
+            if ('과제명' in row) return '과제명';
+            if ('주제명' in row) return '주제명';
+            if ('연구과제명' in row) return '연구과제명';
+            return Object.keys(row)[1] || '';
+        }
+
         function initApp() {
             const teacherSelect = document.getElementById('teacherSelect');
-            const teachers = [...new Set(allData.map(item => item['지도교사'] || item['지도교사명'] || Object.values(item)[0]))].filter(Boolean);
+            if (allData.length === 0) return;
+
+            const tKey = getTeacherKey(allData[0]);
+            
+            // 중복 없는 교사 목록 정렬 추출
+            const teachers = [...new Set(allData.map(item => item[tKey]))].filter(Boolean).sort();
             
             teacherSelect.innerHTML = '<option value="">-- 교사를 선택하세요 --</option>';
             teachers.forEach(t => {
@@ -110,7 +136,7 @@
             document.getElementById('subjectSelect').addEventListener('change', handleSubjectChange);
         }
 
-        // 지도교사 변경 시
+        // 지도교사 선택 시 실행
         function handleTeacherChange() {
             const selectedTeacher = document.getElementById('teacherSelect').value;
             const container = document.getElementById('subjectSelectContainer');
@@ -123,24 +149,25 @@
                 return;
             }
 
-            const teacherRows = allData.filter(item => {
-                const name = item['지도교사'] || item['지도교사명'] || Object.values(item)[0];
-                return name === selectedTeacher;
-            });
+            const tKey = getTeacherKey(allData[0]);
+            const sKey = getSubjectKey(allData[0]);
 
-            const subjects = [...new Set(teacherRows.map(item => item['과제명'] || item['주제명'] || item['연구과제명'] || item['과제'] || ''))].filter(Boolean);
+            // 선택된 교사의 모든 행 추출
+            const teacherRows = allData.filter(item => item[tKey] === selectedTeacher);
+            
+            // 이 교사가 가진 고유한 과제(주제) 목록 추출
+            const subjects = [...new Set(teacherRows.map(item => item[sKey]))].filter(Boolean);
             const taskCount = subjects.length;
 
             teacherStatus.innerHTML = `👨‍🏫 ${selectedTeacher} (${taskCount}개 과제)`;
 
             if (taskCount === 1) {
+                // 1개 과제일 때: 서브 드롭다운 숨기고 정보와 예산 테이블 바로 출력
                 container.classList.add('hidden');
-                
-                // 1개 과제일 때 메타정보 추출 및 표시
                 displayMetaInfo(teacherRows[0], subjects[0]);
                 renderTable(teacherRows);
             } else if (taskCount >= 2) {
-                // 2개 이상 과제일 때는 주제를 고르기 전까지 메타정보 숨김
+                // 2개 이상 과제일 때: 세부 주제 선택창 오픈, 선택 전까지는 정보창 대기
                 metaInfoBox.classList.add('hidden');
                 
                 subjectSelect.innerHTML = '<option value="">-- 세부 주제를 선택하세요 --</option>';
@@ -160,7 +187,7 @@
             }
         }
 
-        // 2개 이상일 때 세부 주제 변경 시
+        // 과제가 2개 이상일 때 특정 주제를 선택한 경우
         function handleSubjectChange() {
             const selectedTeacher = document.getElementById('teacherSelect').value;
             const selectedSubject = document.getElementById('subjectSelect').value;
@@ -173,18 +200,17 @@
                 return;
             }
 
-            const filteredRows = allData.filter(item => {
-                const name = item['지도교사'] || item['지도교사명'] || Object.values(item)[0];
-                const sub = item['과제명'] || item['주제명'] || item['연구과제명'] || item['과제'] || '';
-                return name === selectedTeacher && sub === selectedSubject;
-            });
+            const tKey = getTeacherKey(allData[0]);
+            const sKey = getSubjectKey(allData[0]);
 
-            // 선택된 주제에 맞는 학생 및 연구주제 정보 업데이트
+            // 교사와 주제가 동시에 만족하는 내역 데이터만 최종 필터링
+            const filteredRows = allData.filter(item => item[tKey] === selectedTeacher && item[sKey] === selectedSubject);
+
             displayMetaInfo(filteredRows[0], selectedSubject);
             renderTable(filteredRows);
         }
 
-        // 💡 [핵심] 연구 주제 및 학생 성명(학번) 파싱 및 UI 표시 함수
+        // 학생 목록 및 주제 세부 매핑 함수
         function displayMetaInfo(row, subjectTitle) {
             const metaInfoBox = document.getElementById('metaInfoBox');
             const infoSubject = document.getElementById('infoSubject');
@@ -192,30 +218,22 @@
 
             if (!row) return;
 
-            // 1. 연구 주제 설정
             infoSubject.textContent = subjectTitle;
 
-            // 2. 성명1(학번1), 성명2(학번2) 패턴 동적 매핑 분석
+            // 성명1(학번1), 성명2(학번2) ... 동적 수집 분석
             let studentPairs = [];
-            
-            // 보통 시트에 성명1, 학번1, 성명2, 학번2... 순으로 지정됨을 처리
             for (let i = 1; i <= 10; i++) {
                 const nameKey = row[`성명${i}`] || row[`학생${i}`] || row[`이름${i}`];
                 const idKey = row[`학번${i}`];
 
                 if (nameKey) {
-                    if (idKey) {
-                        studentPairs.push(`${nameKey.trim()}(${idKey.trim()})`);
-                    } else {
-                        studentPairs.push(nameKey.trim());
-                    }
+                    studentPairs.push(idKey ? `${nameKey}(${idKey})` : nameKey);
                 }
             }
 
-            // 만약 성명1 구조가 아니고 '학생명단' 등 하나의 셀에 묶여있을 경우 예외 처리
             if (studentPairs.length === 0) {
-                const bulkStudents = row['학생명'] || row['학생명단'] || row['참여학생'];
-                infoStudents.textContent = bulkStudents ? bulkStudents : '등록된 학생 정보가 없습니다.';
+                const bulkStudents = row['학생명'] || row['학생명단'] || row['참여학생'] || '-';
+                infoStudents.textContent = bulkStudents;
             } else {
                 infoStudents.textContent = studentPairs.join(', ');
             }
@@ -223,7 +241,7 @@
             metaInfoBox.classList.remove('hidden');
         }
 
-        // 테이블 렌더링
+        // 예산 목록 테이블 빌드 및 최종 합산액 계산
         function renderTable(rows) {
             const tableBody = document.getElementById('tableBody');
             const totalAmountEl = document.getElementById('totalAmount');
@@ -234,16 +252,19 @@
                 return;
             }
 
+            const tKey = getTeacherKey(allData[0]);
+            const sKey = getSubjectKey(allData[0]);
+
             let html = '';
             let total = 0;
 
             rows.forEach(item => {
-                const name = item['지도교사'] || item['지도교사명'] || '';
-                const sub = item['과제명'] || item['주제명'] || item['연구과제명'] || '';
+                const name = item[tKey] || '';
+                const sub = item[sKey] || '';
                 const desc = item['산출내역'] || item['내역'] || '';
                 const costStr = item['금액'] || item['예산'] || '0';
                 
-                const cost = parseInt(costStr.replace(/[^0-9]/g, '')) || 0;
+                const cost = parseInt(String(costStr).replace(/[^0-9]/g, '')) || 0;
                 total += cost;
 
                 html += `
