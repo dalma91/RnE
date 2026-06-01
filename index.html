@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>지도교사별 예산 편성 내역 조회</title>
+    <title>지도교사별 예산編成 내역 조회</title>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f9f9f9; color: #333; }
         h2 { color: #2c3e50; }
@@ -23,6 +23,7 @@
         .loading { font-weight: bold; color: #3498db; text-align: center; }
         .num-col { text-align: right; font-variant-numeric: tabular-nums; }
         .hidden { display: none; }
+        .total-row { background-color: #fcf8e3; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -50,6 +51,7 @@
             <div id="metaInfoBox" class="meta-info hidden">
                 <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
                 <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
+                <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
                 <div class="meta-item"><span class="meta-label">👥 참여 학생:</span> <span id="infoStudents">-</span></div>
             </div>
         </div>
@@ -58,14 +60,14 @@
     <table>
         <thead>
             <tr>
-                <th>순</th>
+                <th style="width: 80px;">순</th>
                 <th>예산 항목 (비목)</th>
-                <th class="num-col">배정 금액</th>
+                <th class="num-col" style="width: 200px;">배정 금액</th>
             </tr>
         </thead>
         <tbody id="tableBody">
             <tr>
-                <td colspan="3" class="loading">구글 시트에서 데이터를 안전하게 파싱하는 중...</td>
+                <td colspan="3" class="loading">실제 데이터 필드로 시스템 연동 중...</td>
             </tr>
         </tbody>
     </table>
@@ -74,22 +76,25 @@
         const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE';
         const vizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
 
-        let allData = [];
+        let structuredData = {}; 
+
+        // 🔍 보내주신 데이터에서 100% 추출한 실제 시트의 예산 항목 키 값
         const budgetColumns = [
-            '시약·재료 구입비 및 전산 처리·관리비',
-            '외부전문기술활용비',
-            '출장여비',
-            '수수료 및 제세공과금',
-            '인쇄비·유인물비 및 도서구입비',
-            '회의비',
-            '연구활동원가'
+            '(연구재료비)재료구입비',
+            '(연구활동비)외부전문기술활용비',
+            '(연구활동비)회의비',
+            '(연구활동비)소프트웨어활용비',
+            '(연구활동비)운영물품구입비',
+            '(연구활동비)연구인력지원비(식비,간식비)',
+            '(연구활동비)문헌구입비',
+            '(사업수당)연구수당'
         ];
 
         fetch(vizUrl)
             .then(res => res.text())
             .then(text => {
                 const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\x00-\x7F]+)\);/);
-                if (!match) throw new Error("데이터 구조 파싱 실패");
+                if (!match) throw new Error("시트 JSON 데이터 분석 실패");
                 
                 const obj = JSON.parse(match[1]);
                 const table = obj.table;
@@ -97,60 +102,84 @@
                 
                 let currentTeacher = "";
                 let currentSubject = "";
-                let currentMeta = {};
+                let currentCategory = "";
+                let currentGroup = "";
 
                 table.rows.forEach(row => {
-                    let item = {};
+                    let rawRow = {};
                     row.c.forEach((cell, idx) => {
                         const head = headers[idx];
                         if (head) {
-                            item[head] = cell && cell.v !== null ? String(cell.v).trim() : '';
+                            rawRow[head] = cell ? (cell.f ? cell.f.trim() : (cell.v !== null ? String(cell.v).trim() : '')) : '';
                         }
                     });
 
-                    // 병합된 셀 데이터 보정 로직
-                    if (item['지도교사']) { currentTeacher = item['지도교사']; }
-                    else { item['지도교사'] = currentTeacher; }
+                    // 병합 셀 하향 전이 처리
+                    if (rawRow['지도교사']) currentTeacher = rawRow['지도교사'];
+                    if (rawRow['연구 주제']) currentSubject = rawRow['연구 주제'];
+                    if (rawRow['과제 분야']) currentCategory = rawRow['과제 분야'];
+                    if (rawRow['조']) currentGroup = rawRow['조'];
 
-                    if (item['연구 주제']) { currentSubject = item['연구 주제']; }
-                    else { item['연구 주제'] = currentSubject; }
-
-                    if (item['과제 분야']) {
-                        currentMeta = {
-                            '과제 분야': item['과제 분야']
-                        };
-                    } else {
-                        Object.assign(item, currentMeta);
+                    // 제공된 O~T열 기반 학생 정보 빌드
+                    let rowStudents = [];
+                    for (let i = 1; i <= 3; i++) {
+                        const name = rawRow[`성명${i}`];
+                        const id = rawRow[`학번${i}`];
+                        if (name) rowStudents.push(id ? `${name}(${id})` : name);
                     }
 
-                    if (item['연구 주제']) {
-                        allData.push(item);
+                    if (currentTeacher && currentSubject) {
+                        const key = `${currentTeacher}_${currentSubject}`;
+                        
+                        if (!structuredData[key]) {
+                            structuredData[key] = {
+                                teacher: currentTeacher,
+                                subject: currentSubject,
+                                category: currentCategory,
+                                group: currentGroup,
+                                students: "",
+                                budgets: {}
+                            };
+                            budgetColumns.forEach(col => structuredData[key].budgets[col] = 0);
+                        }
+
+                        if (rowStudents.length > 0) {
+                            structuredData[key].students = rowStudents.join(', ');
+                        }
+
+                        // 진짜 컬럼 레이블을 정확하게 매칭하여 합산
+                        budgetColumns.forEach(colName => {
+                            if (rawRow[colName]) {
+                                const cost = parseInt(rawRow[colName].replace(/[^0-9]/g, '')) || 0;
+                                structuredData[key].budgets[colName] += cost; 
+                            }
+                        });
                     }
                 });
 
                 initApp();
             })
             .catch(err => {
-                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">시트 연동 실패.</td></tr>`;
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">데이터 동기화 실패.</td></tr>`;
                 console.error(err);
             });
 
         function initApp() {
             const teacherSelect = document.getElementById('teacherSelect');
-            if (allData.length === 0) return;
+            const allItems = Object.values(structuredData);
+            if (allItems.length === 0) return;
 
-            const teachers = [...new Set(allData.map(item => item['지도교사']))].filter(Boolean).sort();
+            const teachers = [...new Set(allItems.map(item => item.teacher))].filter(Boolean).sort();
             
             teacherSelect.innerHTML = '<option value="">-- 교사를 선택하세요 --</option>';
             teachers.forEach(t => {
                 const opt = document.createElement('option');
-                opt.value = t;
-                opt.textContent = t;
+                opt.value = t; opt.textContent = t;
                 teacherSelect.appendChild(opt);
             });
             teacherSelect.disabled = false;
             
-            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 실제 예산이 출력됩니다.</td></tr>';
 
             teacherSelect.addEventListener('change', handleTeacherChange);
             document.getElementById('subjectSelect').addEventListener('change', handleSubjectChange);
@@ -168,24 +197,23 @@
                 return;
             }
 
-            const teacherRows = allData.filter(item => item['지도교사'] === selectedTeacher);
-            const subjects = [...new Set(teacherRows.map(item => item['연구 주제']))].filter(Boolean);
-            const taskCount = subjects.length;
+            const allItems = Object.values(structuredData);
+            const teacherItems = allItems.filter(item => item.teacher === selectedTeacher);
+            const taskCount = teacherItems.length;
 
             teacherStatus.innerHTML = `👨‍🏫 ${selectedTeacher} (${taskCount}개 과제)`;
 
             if (taskCount === 1) {
                 container.classList.add('hidden');
-                displayMetaInfo(teacherRows[0], subjects[0]);
-                renderTable(teacherRows[0]);
+                displayMetaInfo(teacherItems[0]);
+                renderTable(teacherItems[0].budgets);
             } else if (taskCount >= 2) {
                 metaInfoBox.classList.add('hidden');
                 
                 subjectSelect.innerHTML = '<option value="">-- 세부 주제를 선택하세요 --</option>';
-                subjects.forEach(sub => {
+                teacherItems.forEach(item => {
                     const opt = document.createElement('option');
-                    opt.value = sub;
-                    opt.textContent = sub;
+                    opt.value = item.subject; opt.textContent = item.subject;
                     subjectSelect.appendChild(opt);
                 });
                 
@@ -205,56 +233,56 @@
                 return;
             }
 
-            const targetRow = allData.find(item => item['지도교사'] === selectedTeacher && item['연구 주제'] === selectedSubject);
+            const key = `${selectedTeacher}_${selectedSubject}`;
+            const targetData = structuredData[key];
 
-            if (targetRow) {
-                displayMetaInfo(targetRow, selectedSubject);
-                renderTable(targetRow);
+            if (targetData) {
+                displayMetaInfo(targetData);
+                renderTable(targetData.budgets);
             }
         }
 
-        function displayMetaInfo(row, subjectTitle) {
+        function displayMetaInfo(data) {
             const metaInfoBox = document.getElementById('metaInfoBox');
-            document.getElementById('infoSubject').textContent = subjectTitle;
-            document.getElementById('infoCategory').textContent = row['과제 분야'] || '-';
-            
-            // 👥 성명1(학번1), 성명2(학번2) 동적 파싱 및 결합 로직
-            let studentList = [];
-            for (let i = 1; i <= 4; i++) {
-                const name = row[`성명${i}`];
-                const studentId = row[`학번${i}`];
-                if (name) {
-                    if (studentId) {
-                        studentList.push(`${name}(${studentId})`);
-                    } else {
-                        studentList.push(name);
-                    }
-                }
-            }
-            
-            document.getElementById('infoStudents').textContent = studentList.length > 0 ? studentList.join(', ') : '등록된 학생 정보가 없습니다.';
+            document.getElementById('infoSubject').textContent = data.subject;
+            document.getElementById('infoCategory').textContent = data.category || '-';
+            document.getElementById('infoGroup').textContent = data.group ? `${data.group}조` : '-';
+            document.getElementById('infoStudents').textContent = data.students || '등록된 학생 정보 없음';
             metaInfoBox.classList.remove('hidden');
         }
 
-        function renderTable(row) {
+        function renderTable(budgets) {
             const tableBody = document.getElementById('tableBody');
             let html = '';
             let index = 1;
+            let totalSum = 0;
 
             budgetColumns.forEach(colName => {
-                const costStr = row[colName] || '0';
-                const cost = parseInt(String(costStr).replace(/[^0-9]/g, '')) || 0;
+                const cost = budgets[colName] || 0;
+                totalSum += cost;
+
+                // 화면에는 대분호 괄호 (연구활동비) 등을 깔끔하게 제거하고 출력
+                let cleanName = colName.replace(/\((연구재료비|연구활동비|사업수당)\)/, '');
 
                 html += `
                     <tr>
                         <td>${index++}</td>
-                        <td><strong>${colName}</strong></td>
+                        <td><strong>${cleanName}</strong></td>
                         <td class="num-col" style="${cost > 0 ? 'font-weight:bold; color:#2c3e50;' : 'color:#aaa;'}">
                             ${cost.toLocaleString()}원
                         </td>
                     </tr>
                 `;
             });
+
+            // 총합 행 추가
+            html += `
+                <tr class="total-row">
+                    <td>-</td>
+                    <td><strong>합계 (팀별 연구비)</strong></td>
+                    <td class="num-col" style="color: #e74c3c;">${totalSum.toLocaleString()}원</td>
+                </tr>
+            `;
 
             tableBody.innerHTML = html;
         }
