@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>지도교사별 예산편성 내역 조회</title>
+    <title>지도교사별 예산 편성 내역 조회</title>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; margin: 20px; background-color: #f9f9f9; color: #333; }
         h2 { color: #2c3e50; }
@@ -13,6 +13,10 @@
         select { padding: 10px; font-size: 16px; width: 100%; max-width: 500px; border-radius: 4px; border: 1px solid #ccc; }
         .info-display { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 16px; line-height: 1.8; }
         .teacher-status { font-weight: bold; color: #2c3e50; font-size: 18px; margin-bottom: 8px; }
+        
+        /* 🚨 공문 제목을 위한 강조 스타일 */
+        .document-title-box { background-color: #fce4d6; padding: 12px; border-radius: 6px; border-left: 4px solid #e06666; margin-bottom: 12px; font-weight: bold; color: #c00000; }
+        
         .meta-info { background-color: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 4px solid #3498db; margin-bottom: 10px; }
         .meta-item { margin-bottom: 5px; }
         .meta-label { font-weight: bold; color: #34495e; }
@@ -48,11 +52,15 @@
         <div class="info-display" id="infoDisplay">
             <div class="teacher-status" id="teacherStatus">교사를 선택해 주세요.</div>
             
-            <div id="metaInfoBox" class="meta-info hidden">
-                <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
-                <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
-                <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
-                <div class="meta-item"><span class="meta-label">👥 참여 학생:</span> <span id="infoStudents">-</span></div>
+            <div id="metaInfoBox" class="hidden">
+                <div class="document-title-box" id="infoDocTitle">공문 제목: 데이터 매칭 중...</div>
+
+                <div class="meta-info">
+                    <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
+                    <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
+                    <div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
+                    <div class="meta-item"><span class="meta-label">👥 참여 학생:</span> <span id="infoStudents">-</span></div>
+                </div>
             </div>
         </div>
     </div>
@@ -78,7 +86,6 @@
 
         let structuredData = {}; 
 
-        // 🔍 보내주신 데이터에서 100% 추출한 실제 시트의 예산 항목 키 값
         const budgetColumns = [
             '(연구재료비)재료구입비',
             '(연구활동비)외부전문기술활용비',
@@ -104,6 +111,8 @@
                 let currentSubject = "";
                 let currentCategory = "";
                 let currentGroup = "";
+                let currentIdx = "";    // A열 (순) 저장 변수
+                let currentField = "";  // B열 (분야) 저장 변수
 
                 table.rows.forEach(row => {
                     let rawRow = {};
@@ -114,13 +123,16 @@
                         }
                     });
 
-                    // 병합 셀 하향 전이 처리
+                    // 병합 셀 데이터 유실 방지
                     if (rawRow['지도교사']) currentTeacher = rawRow['지도교사'];
                     if (rawRow['연구 주제']) currentSubject = rawRow['연구 주제'];
                     if (rawRow['과제 분야']) currentCategory = rawRow['과제 분야'];
                     if (rawRow['조']) currentGroup = rawRow['조'];
+                    
+                    // 🔍 공문 제목을 만들기 위한 A열(순)과 B열(분야) 매칭 데이터 추적
+                    if (rawRow['순']) currentIdx = rawRow['순'];
+                    if (rawRow['분야']) currentField = rawRow['분야'];
 
-                    // 제공된 O~T열 기반 학생 정보 빌드
                     let rowStudents = [];
                     for (let i = 1; i <= 3; i++) {
                         const name = rawRow[`성명${i}`];
@@ -137,6 +149,8 @@
                                 subject: currentSubject,
                                 category: currentCategory,
                                 group: currentGroup,
+                                indexNum: currentIdx,    // A열의 '순' 데이터 저장
+                                fieldName: currentField,  // B열의 '분야' 데이터 저장
                                 students: "",
                                 budgets: {}
                             };
@@ -147,7 +161,6 @@
                             structuredData[key].students = rowStudents.join(', ');
                         }
 
-                        // 진짜 컬럼 레이블을 정확하게 매칭하여 합산
                         budgetColumns.forEach(colName => {
                             if (rawRow[colName]) {
                                 const cost = parseInt(rawRow[colName].replace(/[^0-9]/g, '')) || 0;
@@ -244,6 +257,11 @@
 
         function displayMetaInfo(data) {
             const metaInfoBox = document.getElementById('metaInfoBox');
+            
+            // 🎯 실시간 A열(indexNum)과 B열(fieldName) 조합 공문 제목 텍스트 반영
+            const docTitleElement = document.getElementById('infoDocTitle');
+            docTitleElement.innerHTML = `📝 공문 제목: (창의연구${data.indexNum}) ${data.fieldName}과 과제연구를 위한 0000지출 건의`;
+
             document.getElementById('infoSubject').textContent = data.subject;
             document.getElementById('infoCategory').textContent = data.category || '-';
             document.getElementById('infoGroup').textContent = data.group ? `${data.group}조` : '-';
@@ -261,7 +279,6 @@
                 const cost = budgets[colName] || 0;
                 totalSum += cost;
 
-                // 화면에는 대분호 괄호 (연구활동비) 등을 깔끔하게 제거하고 출력
                 let cleanName = colName.replace(/\((연구재료비|연구활동비|사업수당)\)/, '');
 
                 html += `
@@ -275,7 +292,6 @@
                 `;
             });
 
-            // 총합 행 추가
             html += `
                 <tr class="total-row">
                     <td>-</td>
