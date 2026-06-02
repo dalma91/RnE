@@ -14,7 +14,7 @@
         .info-display { margin-top: 15px; padding-top: 15px; border-top: 1px dashed #ddd; font-size: 16px; line-height: 1.8; }
         .teacher-status { font-weight: bold; color: #2c3e50; font-size: 18px; margin-bottom: 8px; }
         
-        /* 🚨 공문 제목을 위한 강조 스타일 */
+        /* 공문 제목을 위한 강조 스타일 */
         .document-title-box { background-color: #fce4d6; padding: 12px; border-radius: 6px; border-left: 4px solid #e06666; margin-bottom: 12px; font-weight: bold; color: #c00000; }
         
         .meta-info { background-color: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 4px solid #3498db; margin-bottom: 10px; }
@@ -58,7 +58,6 @@
                 <div class="meta-info">
                     <div class="meta-item"><span class="meta-label">📌 연구 주제:</span> <span id="infoSubject">-</span></div>
                     <div class="meta-item"><span class="meta-label">🗂️ 과제 분야:</span> <span id="infoCategory">-</span></div>
-                    //<div class="meta-item"><span class="meta-label">🔢 조 정보:</span> <span id="infoGroup">-</span></div>
                     <div class="meta-item"><span class="meta-label">👥 참여 학생:</span> <span id="infoStudents">-</span></div>
                 </div>
             </div>
@@ -110,9 +109,6 @@
                 let currentTeacher = "";
                 let currentSubject = "";
                 let currentCategory = "";
-                let currentGroup = "";
-                let currentIdx = "";    // A열 (순) 저장 변수
-                let currentField = "";  // B열 (분야) 저장 변수
 
                 table.rows.forEach(row => {
                     let rawRow = {};
@@ -123,15 +119,12 @@
                         }
                     });
 
-                    // 병합 셀 데이터 유실 방지
                     if (rawRow['지도교사']) currentTeacher = rawRow['지도교사'];
                     if (rawRow['연구 주제']) currentSubject = rawRow['연구 주제'];
                     if (rawRow['과제 분야']) currentCategory = rawRow['과제 분야'];
-                    //if (rawRow['조']) currentGroup = rawRow['조'];
                     
-                    // 🔍 공문 제목을 만들기 위한 A열(순)과 B열(분야) 매칭 데이터 추적
-                    if (rawRow['순']) currentIdx = rawRow['순'];
-                    if (rawRow['분야']) currentField = rawRow['분야'];
+                    let currentIdx = rawRow['순'] || "";
+                    let currentField = rawRow['분야'] || "";
 
                     let rowStudents = [];
                     for (let i = 1; i <= 3; i++) {
@@ -148,14 +141,17 @@
                                 teacher: currentTeacher,
                                 subject: currentSubject,
                                 category: currentCategory,
-                                group: currentGroup,
-                                indexNum: currentIdx,    // A열의 '순' 데이터 저장
-                                fieldName: currentField,  // B열의 '분야' 데이터 저장
+                                indexNum: currentIdx,    
+                                fieldName: currentField,  
                                 students: "",
                                 budgets: {}
                             };
                             budgetColumns.forEach(col => structuredData[key].budgets[col] = 0);
                         }
+
+                        // 빈 행 관리를 위해 인덱스나 분야가 채워져 있다면 업데이트
+                        if (currentIdx) structuredData[key].indexNum = currentIdx;
+                        if (currentField) structuredData[key].fieldName = currentField;
 
                         if (rowStudents.length > 0) {
                             structuredData[key].students = rowStudents.join(', ');
@@ -258,13 +254,11 @@
         function displayMetaInfo(data) {
             const metaInfoBox = document.getElementById('metaInfoBox');
             
-            // 🎯 실시간 A열(indexNum)과 B열(fieldName) 조합 공문 제목 텍스트 반영
             const docTitleElement = document.getElementById('infoDocTitle');
             docTitleElement.innerHTML = `📝 공문 제목: (창의연구${data.indexNum}) ${data.fieldName}과 과제연구를 위한 0000지출 건의`;
 
             document.getElementById('infoSubject').textContent = data.subject;
             document.getElementById('infoCategory').textContent = data.category || '-';
-            //document.getElementById('infoGroup').textContent = data.group ? `${data.group}조` : '-';
             document.getElementById('infoStudents').textContent = data.students || '등록된 학생 정보 없음';
             metaInfoBox.classList.remove('hidden');
         }
