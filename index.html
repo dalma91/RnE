@@ -28,6 +28,9 @@
         .num-col { text-align: right; font-variant-numeric: tabular-nums; }
         .hidden { display: none; }
         .total-row { background-color: #fcf8e3; font-weight: bold; }
+        .section-title { margin-top: 28px; }
+        .expense-summary { margin: 10px 0; font-weight: bold; color: #2c3e50; }
+        .expense-title { min-width: 280px; }
     </style>
 </head>
 <body>
@@ -79,11 +82,33 @@
         </tbody>
     </table>
 
+    <section id="expenseSection" class="hidden">
+        <h2 class="section-title">💳 팀별 예산 집행 내역</h2>
+        <div id="expenseSummary" class="expense-summary"></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>일자</th>
+                    <th>번호</th>
+                    <th class="expense-title">제목</th>
+                    <th>산출내역</th>
+                    <th>진행상태</th>
+                    <th class="num-col">집행액</th>
+                </tr>
+            </thead>
+            <tbody id="expenseBody"></tbody>
+        </table>
+    </section>
+
     <script>
         const sheetId = '1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE';
         const vizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
+        const expenseSheetId = '13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o';
+        const expenseUrl = `https://docs.google.com/spreadsheets/d/${expenseSheetId}/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1`;
 
-        let structuredData = {}; 
+        let structuredData = {};
+        let expenseData = [];
+        let expenseLoadFailed = false;
 
         const budgetColumns = [
             '(연구재료비)재료구입비',
@@ -96,82 +121,91 @@
             '(사업수당)연구수당'
         ];
 
-        fetch(vizUrl)
-            .then(res => res.text())
-            .then(text => {
-                const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S\x00-\x7F]+)\);/);
-                if (!match) throw new Error("시트 JSON 데이터 분석 실패");
-                
-                const obj = JSON.parse(match[1]);
-                const table = obj.table;
-                const headers = table.cols.map(col => col.label ? col.label.trim() : '');
-                
-                let currentTeacher = "";
-                let currentSubject = "";
-                let currentCategory = "";
+        Promise.all([loadBudgetData(), loadExpenseData().catch(handleExpenseLoadError)])
+            .then(initApp)
+            .catch(showLoadError);
 
-                table.rows.forEach(row => {
-                    let rawRow = {};
-                    row.c.forEach((cell, idx) => {
-                        const head = headers[idx];
-                        if (head) {
-                            rawRow[head] = cell ? (cell.f ? cell.f.trim() : (cell.v !== null ? String(cell.v).trim() : '')) : '';
-                        }
-                    });
+        async function fetchSheet(url) {
+            const text = await fetch(url).then(res => res.text());
+            const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
+            if (!match) throw new Error('시트 JSON 데이터 분석 실패');
+            return JSON.parse(match[1]).table;
+        }
 
-                    if (rawRow['지도교사']) currentTeacher = rawRow['지도교사'];
-                    if (rawRow['연구 주제']) currentSubject = rawRow['연구 주제'];
-                    if (rawRow['과제 분야']) currentCategory = rawRow['과제 분야'];
-                    
-                    let currentIdx = rawRow['순'] || "";
-                    let currentField = rawRow['분야'] || "";
+        function tableRows(table) {
+            const headers = table.cols.map(col => (col.label || '').trim());
+            return table.rows.map(row => Object.fromEntries(headers.map((head, index) => {
+                const cell = row.c[index];
+                const value = cell ? (cell.f ?? cell.v ?? '') : '';
+                return [head, String(value).trim()];
+            }).filter(([head]) => head)));
+        }
 
-                    let rowStudents = [];
-                    for (let i = 1; i <= 3; i++) {
-                        const name = rawRow[`성명${i}`];
-                        const id = rawRow[`학번${i}`];
-                        if (name) rowStudents.push(id ? `${name}(${id})` : name);
-                    }
+        async function loadBudgetData() {
+            const rows = tableRows(await fetchSheet(vizUrl));
+            let currentTeacher = '', currentSubject = '', currentCategory = '';
 
-                    if (currentTeacher && currentSubject) {
-                        const key = `${currentTeacher}_${currentSubject}`;
-                        
-                        if (!structuredData[key]) {
-                            structuredData[key] = {
-                                teacher: currentTeacher,
-                                subject: currentSubject,
-                                category: currentCategory,
-                                indexNum: currentIdx,    
-                                fieldName: currentField,  
-                                students: "",
-                                budgets: {}
-                            };
-                            budgetColumns.forEach(col => structuredData[key].budgets[col] = 0);
-                        }
+            rows.forEach(rawRow => {
+                currentTeacher = rawRow['지도교사'] || currentTeacher;
+                currentSubject = rawRow['연구 주제'] || currentSubject;
+                currentCategory = rawRow['과제 분야'] || currentCategory;
+                if (!currentTeacher || !currentSubject) return;
 
-                        // 빈 행 관리를 위해 인덱스나 분야가 채워져 있다면 업데이트
-                        if (currentIdx) structuredData[key].indexNum = currentIdx;
-                        if (currentField) structuredData[key].fieldName = currentField;
+                const key = `${currentTeacher}_${currentSubject}`;
+                const item = structuredData[key] ||= {
+                    teacher: currentTeacher,
+                    subject: currentSubject,
+                    category: currentCategory,
+                    indexNum: rawRow['순'] || '',
+                    fieldName: rawRow['분야'] || '',
+                    students: '',
+                    budgets: Object.fromEntries(budgetColumns.map(col => [col, 0]))
+                };
 
-                        if (rowStudents.length > 0) {
-                            structuredData[key].students = rowStudents.join(', ');
-                        }
-
-                        budgetColumns.forEach(colName => {
-                            if (rawRow[colName]) {
-                                const cost = parseInt(rawRow[colName].replace(/[^0-9]/g, '')) || 0;
-                                structuredData[key].budgets[colName] += cost; 
-                            }
-                        });
-                    }
-                });
-
-                initApp();
-            })
-            .catch(err => {
-                document.getElementById('tableBody').innerHTML = `<tr><td colspan="3" style="color:red; text-align:center;">데이터 동기화 실패.</td></tr>`;
-                console.error(err);
+                item.indexNum = rawRow['순'] || item.indexNum;
+                item.fieldName = rawRow['분야'] || item.fieldName;
+                const students = [1, 2, 3].map(i => {
+                    const name = rawRow[`성명${i}`];
+                    return name ? `${name}${rawRow[`학번${i}`] ? `(${rawRow[`학번${i}`]})` : ''}` : '';
+                }).filter(Boolean);
+                if (students.length) item.students = students.join(', ');
+                budgetColumns.forEach(col => item.budgets[col] += parseAmount(rawRow[col]));
             });
+        }
+
+        async function loadExpenseData() {
+            expenseData = tableRows(await fetchSheet(expenseUrl)).map(row => ({
+                date: row['일자'],
+                number: row['번호'],
+                title: row['제목'],
+                status: row['진행상태'],
+                amount: parseAmount(row['원인행위액']),
+                item: row['산출내역']
+            })).filter(row => row.title);
+        }
+
+        function parseAmount(value = '') {
+            return Number(String(value).replace(/[^\d-]/g, '')) || 0;
+        }
+
+        function getTeamNumber(title) {
+            const match = title.trim().match(/^\(창의연구\s*0*(\d+)\)/);
+            return match ? Number(match[1]) : null;
+        }
+
+        function getTeamExpenses(teamNumber) {
+            return expenseData.filter(row => getTeamNumber(row.title) === Number(teamNumber));
+        }
+
+        function showLoadError(error) {
+            document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="color:red; text-align:center;">데이터 동기화 실패.</td></tr>';
+            console.error(error);
+        }
+
+        function handleExpenseLoadError(error) {
+            expenseLoadFailed = true;
+            console.error('지출실적조회 시트를 불러오지 못했습니다.', error);
+        }
 
         function initApp() {
             const teacherSelect = document.getElementById('teacherSelect');
@@ -214,10 +248,10 @@
 
             if (taskCount === 1) {
                 container.classList.add('hidden');
-                displayMetaInfo(teacherItems[0]);
-                renderTable(teacherItems[0].budgets);
+                displayTeam(teacherItems[0]);
             } else if (taskCount >= 2) {
                 metaInfoBox.classList.add('hidden');
+                hideExpenses();
                 
                 subjectSelect.innerHTML = '<option value="">-- 세부 주제를 선택하세요 --</option>';
                 teacherItems.forEach(item => {
@@ -238,6 +272,7 @@
 
             if (!selectedSubject) {
                 metaInfoBox.classList.add('hidden');
+                hideExpenses();
                 document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">세부 주제를 선택해 주세요.</td></tr>';
                 return;
             }
@@ -246,9 +281,14 @@
             const targetData = structuredData[key];
 
             if (targetData) {
-                displayMetaInfo(targetData);
-                renderTable(targetData.budgets);
+                displayTeam(targetData);
             }
+        }
+
+        function displayTeam(data) {
+            displayMetaInfo(data);
+            renderTable(data.budgets);
+            renderExpenses(data.indexNum);
         }
 
         function displayMetaInfo(data) {
@@ -297,9 +337,44 @@
             tableBody.innerHTML = html;
         }
 
+        function renderExpenses(teamNumber) {
+            if (expenseLoadFailed) {
+                document.getElementById('expenseSection').classList.remove('hidden');
+                document.getElementById('expenseSummary').textContent = '지출실적조회 시트의 웹 공개 권한을 확인해 주세요.';
+                document.getElementById('expenseBody').innerHTML = '<tr><td colspan="6" style="text-align:center;">집행 내역을 불러오지 못했습니다.</td></tr>';
+                return;
+            }
+
+            const expenses = getTeamExpenses(teamNumber);
+            const total = expenses.reduce((sum, row) => sum + row.amount, 0);
+            document.getElementById('expenseSection').classList.remove('hidden');
+            document.getElementById('expenseSummary').textContent = `창의연구${Number(teamNumber)} · ${expenses.length}건 · 총 ${total.toLocaleString()}원`;
+            document.getElementById('expenseBody').innerHTML = expenses.length
+                ? expenses.map(row => `<tr>
+                    <td>${escapeHtml(row.date)}</td>
+                    <td>${escapeHtml(row.number)}</td>
+                    <td>${escapeHtml(row.title)}</td>
+                    <td>${escapeHtml(row.item)}</td>
+                    <td>${escapeHtml(row.status)}</td>
+                    <td class="num-col">${row.amount.toLocaleString()}원</td>
+                </tr>`).join('')
+                : '<tr><td colspan="6" style="text-align:center;">집행 내역이 없습니다.</td></tr>';
+        }
+
+        function escapeHtml(value = '') {
+            const div = document.createElement('div');
+            div.textContent = value;
+            return div.innerHTML;
+        }
+
+        function hideExpenses() {
+            document.getElementById('expenseSection').classList.add('hidden');
+        }
+
         function resetUI() {
             document.getElementById('subjectSelectContainer').classList.add('hidden');
             document.getElementById('metaInfoBox').classList.add('hidden');
+            hideExpenses();
             document.getElementById('teacherStatus').textContent = '교사를 선택해 주세요.';
             document.getElementById('tableBody').innerHTML = '<tr><td colspan="3" style="text-align:center;">교사 및 주제를 선택하면 내역이 표시됩니다.</td></tr>';
         }
