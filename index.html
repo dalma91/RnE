@@ -92,7 +92,6 @@
                     <th>번호</th>
                     <th class="expense-title">제목</th>
                     <th>산출내역</th>
-                    <th>진행상태</th>
                     <th class="num-col">집행액</th>
                 </tr>
             </thead>
@@ -178,7 +177,6 @@
                 date: row['일자'],
                 number: row['번호'],
                 title: row['제목'],
-                status: row['진행상태'],
                 amount: parseAmount(row['원인행위액']),
                 item: row['산출내역']
             })).filter(row => row.title);
@@ -341,7 +339,7 @@
             if (expenseLoadFailed) {
                 document.getElementById('expenseSection').classList.remove('hidden');
                 document.getElementById('expenseSummary').textContent = '지출실적조회 시트의 웹 공개 권한을 확인해 주세요.';
-                document.getElementById('expenseBody').innerHTML = '<tr><td colspan="6" style="text-align:center;">집행 내역을 불러오지 못했습니다.</td></tr>';
+                document.getElementById('expenseBody').innerHTML = '<tr><td colspan="5" style="text-align:center;">집행 내역을 불러오지 못했습니다.</td></tr>';
                 return;
             }
 
@@ -355,10 +353,9 @@
                     <td>${escapeHtml(row.number)}</td>
                     <td>${escapeHtml(row.title)}</td>
                     <td>${escapeHtml(row.item)}</td>
-                    <td>${escapeHtml(row.status)}</td>
                     <td class="num-col">${row.amount.toLocaleString()}원</td>
                 </tr>`).join('')
-                : '<tr><td colspan="6" style="text-align:center;">집행 내역이 없습니다.</td></tr>';
+                : '<tr><td colspan="5" style="text-align:center;">집행 내역이 없습니다.</td></tr>';
         }
 
         function escapeHtml(value = '') {
