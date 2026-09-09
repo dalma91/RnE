@@ -19,6 +19,9 @@
         table { width: 100%; min-width: 820px; border-collapse: collapse; background: #fff; }
         th, td { padding: 13px 15px; border-bottom: 1px solid #ddd; }
         th { background: #34495e; color: #fff; text-align: left; }
+        th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+        th[data-sort]:hover, th[data-sort]:focus { background: #46637f; outline: none; }
+        .sort-arrow { display: inline-block; width: 1em; margin-left: 4px; }
         tbody tr:hover { background: #f5f9fc; }
         .num { text-align: right; font-variant-numeric: tabular-nums; }
         .rate { color: #e74c3c; font-weight: bold; }
@@ -47,12 +50,12 @@
             <table>
                 <thead>
                     <tr>
-                        <th>팀</th>
-                        <th>지도교사</th>
-                        <th class="num">예산총액</th>
-                        <th class="num">집행액</th>
-                        <th class="num">잔액</th>
-                        <th class="num">집행비율</th>
+                        <th data-sort="number" tabindex="0">팀<span class="sort-arrow"></span></th>
+                        <th data-sort="teacher" tabindex="0">지도교사<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="budget" tabindex="0">예산총액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="spent" tabindex="0">집행액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="balance" tabindex="0">잔액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="rate" tabindex="0">집행비율<span class="sort-arrow"></span></th>
                     </tr>
                 </thead>
                 <tbody id="summaryBody">
@@ -65,14 +68,19 @@
     <script>
         const budgetUrl = `https://docs.google.com/spreadsheets/d/1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
         const expenseUrl = 'https://docs.google.com/spreadsheets/d/13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1';
+        let teamData = [];
+        let sortKey = 'number';
+        let sortDirection = 1;
 
+        bindSorting();
         loadSummary().catch(showError);
 
         async function loadSummary() {
             const [budgetTable, expenseTable] = await Promise.all([fetchSheet(budgetUrl), fetchSheet(expenseUrl)]);
             const teams = buildTeams(tableRows(budgetTable));
             applyExpenses(teams, tableRows(expenseTable));
-            renderSummary(Object.values(teams).sort((a, b) => a.number - b.number));
+            teamData = Object.values(teams);
+            renderSortedSummary();
         }
 
         async function fetchSheet(url) {
@@ -111,6 +119,44 @@
 
         function toNumber(value = '') {
             return Number(String(value).replace(/[^\d-]/g, '')) || 0;
+        }
+
+        function bindSorting() {
+            document.querySelectorAll('th[data-sort]').forEach(header => {
+                const sort = () => sortTeams(header.dataset.sort);
+                header.addEventListener('click', sort);
+                header.addEventListener('keydown', event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        sort();
+                    }
+                });
+            });
+        }
+
+        function sortTeams(key) {
+            sortDirection = sortKey === key ? -sortDirection : 1;
+            sortKey = key;
+            renderSortedSummary();
+        }
+
+        function renderSortedSummary() {
+            const sorted = [...teamData].sort((a, b) => compareTeams(a, b) * sortDirection);
+            renderSummary(sorted);
+            document.querySelectorAll('th[data-sort]').forEach(header => {
+                const selected = header.dataset.sort === sortKey;
+                header.querySelector('.sort-arrow').textContent = selected ? (sortDirection === 1 ? '▲' : '▼') : '';
+                header.setAttribute('aria-sort', selected ? (sortDirection === 1 ? 'ascending' : 'descending') : 'none');
+            });
+        }
+
+        function compareTeams(a, b) {
+            const value = team => sortKey === 'balance' ? team.budget - team.spent
+                : sortKey === 'rate' ? (team.budget ? team.spent / team.budget : 0)
+                : team[sortKey];
+            return sortKey === 'teacher'
+                ? String(value(a)).localeCompare(String(value(b)), 'ko')
+                : value(a) - value(b);
         }
 
         function renderSummary(teams) {
