@@ -34,11 +34,16 @@
         .budget-table { min-width: 900px; }
         .table-scroll { overflow-x: auto; }
         .rate { color: #e74c3c; font-weight: bold; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .page-link { color: #fff; background: #3498db; padding: 9px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <h2>💰 지도교사별 예산 편성 내역</h2>
+    <div class="page-header">
+        <h2>💰 지도교사별 예산 편성 내역</h2>
+        <a class="page-link" href="summary.html">📊 전체 팀 현황</a>
+    </div>
     
     <div class="control-box">
         <div class="select-group">

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>팀별 예산 집행 현황</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 24px; font-family: 'Malgun Gothic', sans-serif; background: #f4f7fa; color: #263238; }
+        .wrap { max-width: 1200px; margin: 0 auto; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
+        h1 { margin: 0; color: #2c3e50; font-size: 26px; }
+        .back-link { color: #fff; background: #3498db; padding: 9px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+        .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+        .card { background: #fff; border-radius: 9px; padding: 16px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
+        .card-label { color: #607d8b; font-size: 14px; }
+        .card-value { margin-top: 7px; font-size: 22px; font-weight: bold; }
+        .table-scroll { overflow-x: auto; border-radius: 9px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
+        table { width: 100%; min-width: 820px; border-collapse: collapse; background: #fff; }
+        th, td { padding: 13px 15px; border-bottom: 1px solid #ddd; }
+        th { background: #34495e; color: #fff; text-align: left; }
+        tbody tr:hover { background: #f5f9fc; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .rate { color: #e74c3c; font-weight: bold; }
+        .total-row { background: #fcf8e3; font-weight: bold; }
+        .loading, .error { text-align: center; padding: 28px; }
+        .error { color: #c0392b; }
+        @media (max-width: 720px) {
+            body { padding: 14px; }
+            .page-header { align-items: flex-start; }
+            h1 { font-size: 21px; }
+            .summary { grid-template-columns: repeat(2, 1fr); }
+            .card-value { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <div class="page-header">
+            <h1>📊 팀별 예산 집행 현황</h1>
+            <a class="back-link" href="index.html">상세 조회</a>
+        </div>
+
+        <section class="summary" id="summaryCards"></section>
+
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>팀</th>
+                        <th>지도교사</th>
+                        <th class="num">예산총액</th>
+                        <th class="num">집행액</th>
+                        <th class="num">잔액</th>
+                        <th class="num">집행비율</th>
+                    </tr>
+                </thead>
+                <tbody id="summaryBody">
+                    <tr><td colspan="6" class="loading">데이터를 불러오는 중입니다...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const budgetUrl = `https://docs.google.com/spreadsheets/d/1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
+        const expenseUrl = 'https://docs.google.com/spreadsheets/d/13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1';
+
+        loadSummary().catch(showError);
+
+        async function loadSummary() {
+            const [budgetTable, expenseTable] = await Promise.all([fetchSheet(budgetUrl), fetchSheet(expenseUrl)]);
+            const teams = buildTeams(tableRows(budgetTable));
+            applyExpenses(teams, tableRows(expenseTable));
+            renderSummary(Object.values(teams).sort((a, b) => a.number - b.number));
+        }
+
+        async function fetchSheet(url) {
+            const text = await fetch(url).then(response => response.text());
+            const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
+            if (!match) throw new Error('시트 데이터를 분석하지 못했습니다.');
+            return JSON.parse(match[1]).table;
+        }
+
+        function tableRows(table) {
+            const headers = table.cols.map(column => (column.label || '').trim());
+            return table.rows.map(row => Object.fromEntries(headers.map((header, index) => {
+                const cell = row.c[index];
+                return [header, String(cell ? (cell.f ?? cell.v ?? '') : '').trim()];
+            }).filter(([header]) => header)));
+        }
+
+        function buildTeams(rows) {
+            return Object.fromEntries(rows.filter(row => row['순']).map(row => {
+                const number = Number(row['순']);
+                return [number, { number, teacher: row['지도교사'], budget: toNumber(row['팀별 연구비']), spent: 0 }];
+            }));
+        }
+
+        function applyExpenses(teams, rows) {
+            rows.forEach(row => {
+                const number = getTeamNumber(row['제목']);
+                if (teams[number]) teams[number].spent += toNumber(row['원인행위액']);
+            });
+        }
+
+        function getTeamNumber(title = '') {
+            const match = title.trim().match(/^\(창의연구\s*0*(\d+)\)/);
+            return match ? Number(match[1]) : null;
+        }
+
+        function toNumber(value = '') {
+            return Number(String(value).replace(/[^\d-]/g, '')) || 0;
+        }
+
+        function renderSummary(teams) {
+            const totals = teams.reduce((sum, team) => ({
+                budget: sum.budget + team.budget,
+                spent: sum.spent + team.spent
+            }), { budget: 0, spent: 0 });
+
+            document.getElementById('summaryCards').innerHTML = [
+                ['전체 팀', `${teams.length}팀`],
+                ['총 예산', won(totals.budget)],
+                ['총 집행액', won(totals.spent)],
+                ['총 잔액', won(totals.budget - totals.spent)]
+            ].map(([label, value]) => `<div class="card"><div class="card-label">${label}</div><div class="card-value">${value}</div></div>`).join('');
+
+            document.getElementById('summaryBody').innerHTML = teams.map(team => `
+                <tr>
+                    <td><strong>창의연구${team.number}</strong></td>
+                    <td>${escapeHtml(team.teacher)}</td>
+                    <td class="num">${won(team.budget)}</td>
+                    <td class="num">${won(team.spent)}</td>
+                    <td class="num">${won(team.budget - team.spent)}</td>
+                    <td class="num rate">${rate(team.spent, team.budget)}</td>
+                </tr>`).join('') + `
+                <tr class="total-row">
+                    <td colspan="2">합계</td>
+                    <td class="num">${won(totals.budget)}</td>
+                    <td class="num">${won(totals.spent)}</td>
+                    <td class="num">${won(totals.budget - totals.spent)}</td>
+                    <td class="num rate">${rate(totals.spent, totals.budget)}</td>
+                </tr>`;
+        }
+
+        function won(value) {
+            return `${value.toLocaleString()}원`;
+        }
+
+        function rate(spent, budget) {
+            return `${(budget ? spent / budget * 100 : 0).toFixed(2)}%`;
+        }
+
+        function escapeHtml(value = '') {
+            const div = document.createElement('div');
+            div.textContent = value;
+            return div.innerHTML;
+        }
+
+        function showError(error) {
+            document.getElementById('summaryBody').innerHTML = '<tr><td colspan="6" class="error">데이터를 불러오지 못했습니다.</td></tr>';
+            console.error(error);
+        }
+    </script>
+</body>
+</html>
