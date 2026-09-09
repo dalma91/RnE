@@ -11,7 +11,7 @@
         .page-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; }
         h1 { margin: 0; color: #2c3e50; font-size: 26px; }
         .back-link { color: #fff; background: #3498db; padding: 9px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; }
-        .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
         .card { background: #fff; border-radius: 9px; padding: 16px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
         .card-label { color: #607d8b; font-size: 14px; }
         .card-value { margin-top: 7px; font-size: 22px; font-weight: bold; }
@@ -169,8 +169,9 @@
                 ['전체 팀', `${teams.length}팀`],
                 ['총 예산', won(totals.budget)],
                 ['총 집행액', won(totals.spent)],
-                ['총 잔액', won(totals.budget - totals.spent)]
-            ].map(([label, value]) => `<div class="card"><div class="card-label">${label}</div><div class="card-value">${value}</div></div>`).join('');
+                ['총 잔액', won(totals.budget - totals.spent)],
+                ['전체 예산 집행 비율', rate(totals.spent, totals.budget), 'rate']
+            ].map(([label, value, className = '']) => `<div class="card"><div class="card-label">${label}</div><div class="card-value ${className}">${value}</div></div>`).join('');
 
             document.getElementById('summaryBody').innerHTML = teams.map(team => `
                 <tr>
