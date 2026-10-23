@@ -16,7 +16,7 @@
         .card-label { color: #607d8b; font-size: 14px; }
         .card-value { margin-top: 7px; font-size: 22px; font-weight: bold; }
         .table-scroll { overflow-x: auto; border-radius: 9px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
-        table { width: 100%; min-width: 820px; border-collapse: collapse; background: #fff; }
+        table { width: 100%; min-width: 960px; border-collapse: collapse; background: #fff; }
         th, td { padding: 13px 15px; border-bottom: 1px solid #ddd; }
         th { background: #34495e; color: #fff; text-align: left; }
         th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
@@ -54,12 +54,13 @@
                         <th data-sort="teacher" tabindex="0">지도교사<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="budget" tabindex="0">예산총액<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="spent" tabindex="0">집행액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="allowance" tabindex="0">수당<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="balance" tabindex="0">잔액<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="rate" tabindex="0">집행비율<span class="sort-arrow"></span></th>
                     </tr>
                 </thead>
                 <tbody id="summaryBody">
-                    <tr><td colspan="6" class="loading">데이터를 불러오는 중입니다...</td></tr>
+                    <tr><td colspan="7" class="loading">데이터를 불러오는 중입니다...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -103,7 +104,13 @@
         function buildTeams(rows) {
             return Object.fromEntries(rows.filter(row => row['순']).map(row => {
                 const number = Number(row['순']);
-                return [number, { number, teacher: row['지도교사'], budget: toNumber(row['팀별 연구비']), spent: fixedResearchAllowanceSpent }];
+                return [number, {
+                    number,
+                    teacher: row['지도교사'],
+                    budget: toNumber(row['팀별 연구비']),
+                    spent: 0,
+                    allowance: fixedResearchAllowanceSpent
+                }];
             }));
         }
 
@@ -155,8 +162,8 @@
         }
 
         function compareTeams(a, b) {
-            const value = team => sortKey === 'balance' ? team.budget - team.spent
-                : sortKey === 'rate' ? (team.budget ? team.spent / team.budget : 0)
+            const value = team => sortKey === 'balance' ? team.budget - executedTotal(team)
+                : sortKey === 'rate' ? (team.budget ? executedTotal(team) / team.budget : 0)
                 : team[sortKey];
             return sortKey === 'teacher'
                 ? String(value(a)).localeCompare(String(value(b)), 'ko')
@@ -166,15 +173,18 @@
         function renderSummary(teams) {
             const totals = teams.reduce((sum, team) => ({
                 budget: sum.budget + team.budget,
-                spent: sum.spent + team.spent
-            }), { budget: 0, spent: 0 });
+                spent: sum.spent + team.spent,
+                allowance: sum.allowance + team.allowance
+            }), { budget: 0, spent: 0, allowance: 0 });
+            const totalExecuted = totals.spent + totals.allowance;
 
             document.getElementById('summaryCards').innerHTML = [
                 ['전체 팀', `${teams.length}팀`],
                 ['총 예산', won(totals.budget)],
                 ['총 집행액', won(totals.spent)],
-                ['총 잔액', won(totals.budget - totals.spent)],
-                ['전체 예산 집행 비율', rate(totals.spent, totals.budget), 'rate']
+                ['총 수당', won(totals.allowance)],
+                ['총 잔액', won(totals.budget - totalExecuted)],
+                ['전체 예산 집행 비율', rate(totalExecuted, totals.budget), 'rate']
             ].map(([label, value, className = '']) => `<div class="card"><div class="card-label">${label}</div><div class="card-value ${className}">${value}</div></div>`).join('');
 
             document.getElementById('summaryBody').innerHTML = teams.map(team => `
@@ -183,16 +193,22 @@
                     <td>${escapeHtml(team.teacher)}</td>
                     <td class="num">${won(team.budget)}</td>
                     <td class="num">${won(team.spent)}</td>
-                    <td class="num">${won(team.budget - team.spent)}</td>
-                    <td class="num rate">${rate(team.spent, team.budget)}</td>
+                    <td class="num">${won(team.allowance)}</td>
+                    <td class="num">${won(team.budget - executedTotal(team))}</td>
+                    <td class="num rate">${rate(executedTotal(team), team.budget)}</td>
                 </tr>`).join('') + `
                 <tr class="total-row">
                     <td colspan="2">합계</td>
                     <td class="num">${won(totals.budget)}</td>
                     <td class="num">${won(totals.spent)}</td>
-                    <td class="num">${won(totals.budget - totals.spent)}</td>
-                    <td class="num rate">${rate(totals.spent, totals.budget)}</td>
+                    <td class="num">${won(totals.allowance)}</td>
+                    <td class="num">${won(totals.budget - totalExecuted)}</td>
+                    <td class="num rate">${rate(totalExecuted, totals.budget)}</td>
                 </tr>`;
+        }
+
+        function executedTotal(team) {
+            return team.spent + team.allowance;
         }
 
         function won(value) {
@@ -210,7 +226,7 @@
         }
 
         function showError(error) {
-            document.getElementById('summaryBody').innerHTML = '<tr><td colspan="6" class="error">데이터를 불러오지 못했습니다.</td></tr>';
+            document.getElementById('summaryBody').innerHTML = '<tr><td colspan="7" class="error">데이터를 불러오지 못했습니다.</td></tr>';
             console.error(error);
         }
     </script>
