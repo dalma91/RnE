@@ -117,6 +117,8 @@
         const vizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
         const expenseSheetId = '13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o';
         const expenseUrl = `https://docs.google.com/spreadsheets/d/${expenseSheetId}/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1`;
+        const researchAllowanceItem = '(사업수당)연구수당';
+        const fixedResearchAllowanceSpent = 700000;
 
         let structuredData = {};
         let expenseData = [];
@@ -329,7 +331,7 @@
 
             budgetColumns.forEach(colName => {
                 const budget = budgets[colName] || 0;
-                const spent = spentByItem[colName] || 0;
+                const spent = getSpentAmount(colName, spentByItem);
                 const balance = budget - spent;
                 totalBudget += budget;
                 totalSpent += spent;
@@ -363,6 +365,12 @@
             tableBody.innerHTML = html;
         }
 
+        function getSpentAmount(colName, spentByItem) {
+            return colName === researchAllowanceItem
+                ? fixedResearchAllowanceSpent
+                : spentByItem[colName] || 0;
+        }
+
         function formatWon(value) {
             return `${value.toLocaleString()}원`;
         }
@@ -380,9 +388,11 @@
             }
 
             const expenses = getTeamExpenses(teamNumber);
-            const total = expenses.reduce((sum, row) => sum + row.amount, 0);
+            const total = expenses
+                .filter(row => row.item !== researchAllowanceItem)
+                .reduce((sum, row) => sum + row.amount, fixedResearchAllowanceSpent);
             document.getElementById('expenseSection').classList.remove('hidden');
-            document.getElementById('expenseSummary').textContent = `창의연구${Number(teamNumber)} · ${expenses.length}건 · 총 ${total.toLocaleString()}원`;
+            document.getElementById('expenseSummary').textContent = `창의연구${Number(teamNumber)} · ${expenses.length}건 · 총 ${total.toLocaleString()}원 (연구수당 700,000원 포함)`;
             document.getElementById('expenseBody').innerHTML = expenses.length
                 ? expenses.map(row => `<tr>
                     <td>${escapeHtml(row.date)}</td>

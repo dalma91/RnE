@@ -68,6 +68,8 @@
     <script>
         const budgetUrl = `https://docs.google.com/spreadsheets/d/1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
         const expenseUrl = 'https://docs.google.com/spreadsheets/d/13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1';
+        const researchAllowanceItem = '(사업수당)연구수당';
+        const fixedResearchAllowanceSpent = 700000;
         let teamData = [];
         let sortKey = 'number';
         let sortDirection = 1;
@@ -101,14 +103,16 @@
         function buildTeams(rows) {
             return Object.fromEntries(rows.filter(row => row['순']).map(row => {
                 const number = Number(row['순']);
-                return [number, { number, teacher: row['지도교사'], budget: toNumber(row['팀별 연구비']), spent: 0 }];
+                return [number, { number, teacher: row['지도교사'], budget: toNumber(row['팀별 연구비']), spent: fixedResearchAllowanceSpent }];
             }));
         }
 
         function applyExpenses(teams, rows) {
             rows.forEach(row => {
                 const number = getTeamNumber(row['제목']);
-                if (teams[number]) teams[number].spent += toNumber(row['원인행위액']);
+                if (teams[number] && row['산출내역'] !== researchAllowanceItem) {
+                    teams[number].spent += toNumber(row['원인행위액']);
+                }
             });
         }
 
