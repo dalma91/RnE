@@ -163,6 +163,7 @@
             let currentTeacher = '', currentSubject = '', currentCategory = '';
 
             rows.forEach(rawRow => {
+                if (!/^\d+$/.test(rawRow['순'])) return;
                 const isGeneralBudget = Number(rawRow['순']) === 0;
                 currentTeacher = rawRow['지도교사'] || currentTeacher;
                 currentSubject = isGeneralBudget ? '총괄 운영 예산' : rawRow['연구 주제'] || currentSubject;
@@ -372,9 +373,13 @@
         }
 
         function getSpentAmount(colName, spentByItem, teamNumber) {
-            return colName === researchAllowanceItem
-                ? (Number(teamNumber) === 0 ? 0 : fixedResearchAllowanceSpent)
-                : spentByItem[colName] || 0;
+            if (colName === researchAllowanceItem) {
+                return Number(teamNumber) === 0 ? 0 : fixedResearchAllowanceSpent;
+            }
+            if (colName === '인쇄·복사·인화비') {
+                return spentByItem[colName] || spentByItem[`(연구활동비)${colName}`] || 0;
+            }
+            return spentByItem[colName] || 0;
         }
 
         function formatWon(value) {
