@@ -87,7 +87,8 @@
         }
 
         async function fetchSheet(url) {
-            const text = await fetch(url).then(response => response.text());
+            const freshUrl = `${url}&_=${Date.now()}`;
+            const text = await fetch(freshUrl, { cache: 'no-store' }).then(response => response.text());
             const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
             if (!match) throw new Error('시트 데이터를 분석하지 못했습니다.');
             return JSON.parse(match[1]).table;
