@@ -134,6 +134,7 @@
             '(연구활동비)연구인력지원비(식비,간식비)',
             '(연구활동비)연구인력지원비(학술참가비)',
             '(연구활동비)문헌구입비',
+            '인쇄·복사·인화비',
             '(사업수당)연구수당'
         ];
 
@@ -162,9 +163,10 @@
             let currentTeacher = '', currentSubject = '', currentCategory = '';
 
             rows.forEach(rawRow => {
+                const isGeneralBudget = Number(rawRow['순']) === 0;
                 currentTeacher = rawRow['지도교사'] || currentTeacher;
-                currentSubject = rawRow['연구 주제'] || currentSubject;
-                currentCategory = rawRow['과제 분야'] || currentCategory;
+                currentSubject = isGeneralBudget ? '총괄 운영 예산' : rawRow['연구 주제'] || currentSubject;
+                currentCategory = isGeneralBudget ? '총괄' : rawRow['과제 분야'] || currentCategory;
                 if (!currentTeacher || !currentSubject) return;
 
                 const key = `${currentTeacher}_${currentSubject}`;
@@ -310,11 +312,15 @@
             const metaInfoBox = document.getElementById('metaInfoBox');
             
             const docTitleElement = document.getElementById('infoDocTitle');
-            docTitleElement.innerHTML = `📝 공문 제목: (창의연구${data.indexNum}) ${data.fieldName}과 과제연구를 위한 0000지출 건의`;
+            docTitleElement.innerHTML = Number(data.indexNum) === 0
+                ? '📝 공문 제목: 총괄담당자 예산 집행'
+                : `📝 공문 제목: (창의연구${data.indexNum}) ${data.fieldName}과 과제연구를 위한 0000지출 건의`;
 
             document.getElementById('infoSubject').textContent = data.subject;
             document.getElementById('infoCategory').textContent = data.category || '-';
-            document.getElementById('infoStudents').textContent = data.students || '등록된 학생 정보 없음';
+            document.getElementById('infoStudents').textContent = Number(data.indexNum) === 0
+                ? '해당 없음'
+                : data.students || '등록된 학생 정보 없음';
             metaInfoBox.classList.remove('hidden');
         }
 
@@ -331,7 +337,7 @@
 
             budgetColumns.forEach(colName => {
                 const budget = budgets[colName] || 0;
-                const spent = getSpentAmount(colName, spentByItem);
+                const spent = getSpentAmount(colName, spentByItem, teamNumber);
                 const balance = budget - spent;
                 totalBudget += budget;
                 totalSpent += spent;
@@ -354,7 +360,7 @@
             html += `
                 <tr class="total-row">
                     <td>-</td>
-                    <td><strong>합계 (팀별 연구비)</strong></td>
+                    <td><strong>${Number(teamNumber) === 0 ? '합계 (총괄 예산)' : '합계 (팀별 연구비)'}</strong></td>
                     <td class="num-col">${formatWon(totalBudget)}</td>
                     <td class="num-col">${formatWon(totalSpent)}</td>
                     <td class="num-col">${formatWon(totalBalance)}</td>
@@ -365,9 +371,9 @@
             tableBody.innerHTML = html;
         }
 
-        function getSpentAmount(colName, spentByItem) {
+        function getSpentAmount(colName, spentByItem, teamNumber) {
             return colName === researchAllowanceItem
-                ? fixedResearchAllowanceSpent
+                ? (Number(teamNumber) === 0 ? 0 : fixedResearchAllowanceSpent)
                 : spentByItem[colName] || 0;
         }
 
@@ -388,11 +394,14 @@
             }
 
             const expenses = getTeamExpenses(teamNumber);
+            const allowance = Number(teamNumber) === 0 ? 0 : fixedResearchAllowanceSpent;
             const total = expenses
                 .filter(row => row.item !== researchAllowanceItem)
-                .reduce((sum, row) => sum + row.amount, fixedResearchAllowanceSpent);
+                .reduce((sum, row) => sum + row.amount, allowance);
+            const label = Number(teamNumber) === 0 ? '총괄담당자' : `창의연구${Number(teamNumber)}`;
+            const allowanceNote = allowance ? ' (연구수당 700,000원 포함)' : '';
             document.getElementById('expenseSection').classList.remove('hidden');
-            document.getElementById('expenseSummary').textContent = `창의연구${Number(teamNumber)} · ${expenses.length}건 · 총 ${total.toLocaleString()}원 (연구수당 700,000원 포함)`;
+            document.getElementById('expenseSummary').textContent = `${label} · ${expenses.length}건 · 총 ${total.toLocaleString()}원${allowanceNote}`;
             document.getElementById('expenseBody').innerHTML = expenses.length
                 ? expenses.map(row => `<tr>
                     <td>${escapeHtml(row.date)}</td>

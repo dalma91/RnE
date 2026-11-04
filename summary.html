@@ -109,7 +109,7 @@
                     teacher: row['지도교사'],
                     budget: toNumber(row['팀별 연구비']),
                     spent: 0,
-                    allowance: fixedResearchAllowanceSpent
+                    allowance: number === 0 ? 0 : fixedResearchAllowanceSpent
                 }];
             }));
         }
@@ -171,6 +171,7 @@
         }
 
         function renderSummary(teams) {
+            const teamCount = teams.filter(team => team.number > 0).length;
             const totals = teams.reduce((sum, team) => ({
                 budget: sum.budget + team.budget,
                 spent: sum.spent + team.spent,
@@ -179,7 +180,7 @@
             const totalExecuted = totals.spent + totals.allowance;
 
             document.getElementById('summaryCards').innerHTML = [
-                ['전체 팀', `${teams.length}팀`],
+                ['전체 팀', `${teamCount}팀`],
                 ['총 예산', won(totals.budget)],
                 ['총 집행액', won(totals.spent)],
                 ['총 수당', won(totals.allowance)],
@@ -189,7 +190,7 @@
 
             document.getElementById('summaryBody').innerHTML = teams.map(team => `
                 <tr>
-                    <td><strong>창의연구${team.number}</strong></td>
+                    <td><strong>${team.number === 0 ? '총괄담당자' : `창의연구${team.number}`}</strong></td>
                     <td>${escapeHtml(team.teacher)}</td>
                     <td class="num">${won(team.budget)}</td>
                     <td class="num">${won(team.spent)}</td>
