@@ -163,7 +163,7 @@
 
         function compareTeams(a, b) {
             const value = team => sortKey === 'balance' ? team.budget - executedTotal(team)
-                : sortKey === 'rate' ? (team.budget ? executedTotal(team) / team.budget : 0)
+                : sortKey === 'rate' ? executionRate(team)
                 : team[sortKey];
             return sortKey === 'teacher'
                 ? String(value(a)).localeCompare(String(value(b)), 'ko')
@@ -185,7 +185,7 @@
                 ['총 집행액', won(totals.spent)],
                 ['총 수당', won(totals.allowance)],
                 ['총 잔액', won(totals.budget - totalExecuted)],
-                ['전체 예산 집행 비율', rate(totalExecuted, totals.budget), 'rate']
+                ['전체 예산 집행 비율', rate(totals.spent, totals.budget - totals.allowance), 'rate']
             ].map(([label, value, className = '']) => `<div class="card"><div class="card-label">${label}</div><div class="card-value ${className}">${value}</div></div>`).join('');
 
             document.getElementById('summaryBody').innerHTML = teams.map(team => `
@@ -196,7 +196,7 @@
                     <td class="num">${won(team.spent)}</td>
                     <td class="num">${won(team.allowance)}</td>
                     <td class="num">${won(team.budget - executedTotal(team))}</td>
-                    <td class="num rate">${rate(executedTotal(team), team.budget)}</td>
+                    <td class="num rate">${rate(team.spent, team.budget - team.allowance)}</td>
                 </tr>`).join('') + `
                 <tr class="total-row">
                     <td colspan="2">합계</td>
@@ -204,12 +204,17 @@
                     <td class="num">${won(totals.spent)}</td>
                     <td class="num">${won(totals.allowance)}</td>
                     <td class="num">${won(totals.budget - totalExecuted)}</td>
-                    <td class="num rate">${rate(totalExecuted, totals.budget)}</td>
+                    <td class="num rate">${rate(totals.spent, totals.budget - totals.allowance)}</td>
                 </tr>`;
         }
 
         function executedTotal(team) {
             return team.spent + team.allowance;
+        }
+
+        function executionRate(team) {
+            const executableBudget = team.budget - team.allowance;
+            return executableBudget ? team.spent / executableBudget : 0;
         }
 
         function won(value) {

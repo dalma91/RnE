@@ -358,6 +358,10 @@
             });
 
             const totalBalance = totalBudget - totalSpent;
+            const allowanceBudget = budgets[researchAllowanceItem] || 0;
+            const allowanceSpent = getSpentAmount(researchAllowanceItem, spentByItem, teamNumber);
+            const actualSpent = totalSpent - allowanceSpent;
+            const executableBudget = totalBudget - allowanceBudget;
             html += `
                 <tr class="total-row">
                     <td>-</td>
@@ -365,7 +369,7 @@
                     <td class="num-col">${formatWon(totalBudget)}</td>
                     <td class="num-col">${formatWon(totalSpent)}</td>
                     <td class="num-col">${formatWon(totalBalance)}</td>
-                    <td class="num-col rate">${formatRate(totalSpent, totalBudget)}</td>
+                    <td class="num-col rate">${formatRate(actualSpent, executableBudget)}</td>
                 </tr>
             `;
 
