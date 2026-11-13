@@ -19,12 +19,21 @@
         .table-scroll { overflow-x: auto; border-radius: 9px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
         table { width: 100%; min-width: 760px; border-collapse: collapse; background: #fff; }
         th, td { padding: 13px 15px; border-bottom: 1px solid #ddd; }
-        th { background: #34495e; color: #fff; text-align: left; cursor: pointer; user-select: none; white-space: nowrap; }
-        th:hover, th:focus { background: #46637f; outline: none; }
+        th { background: #34495e; color: #fff; text-align: left; white-space: nowrap; }
+        th[data-sort] { cursor: pointer; user-select: none; }
+        th[data-sort]:hover, th[data-sort]:focus { background: #46637f; outline: none; }
         .sort-arrow { display: inline-block; width: 1em; margin-left: 4px; }
         tbody tr:hover { background: #f5f9fc; }
         .num { text-align: right; font-variant-numeric: tabular-nums; }
         .total-row { background: #fcf8e3; font-weight: bold; }
+        .unmatched-cell { background: #fde2e2; color: #8f2f2f; }
+        .unmatched-note { margin-top: 5px; font-size: 12px; font-weight: bold; color: #b33a3a; }
+        .unmatched-section { margin-top: 26px; }
+        .unmatched-section h2 { margin: 0 0 8px; color: #8f2f2f; font-size: 21px; }
+        .unmatched-guide { margin: 0 0 12px; color: #6d4c4c; }
+        .unmatched-table td { background: #fff0f0; }
+        .unmatched-table tbody tr:hover td { background: #fde2e2; }
+        .empty-unmatched { padding: 18px; text-align: center; color: #2e7d32; background: #edf7ed; border-radius: 8px; }
         .loading, .error { text-align: center; padding: 28px; }
         .error { color: #c0392b; }
         @media (max-width: 720px) {
@@ -65,6 +74,12 @@
                 </tbody>
             </table>
         </div>
+
+        <section class="unmatched-section">
+            <h2>⚠️ 창의연구번호 미지정 집행내역</h2>
+            <p class="unmatched-guide">제목이 <strong>(창의연구번호)</strong>로 시작하지 않거나 예산표에 없는 번호인 내역입니다. 해당 비목 셀도 연한 붉은색으로 표시됩니다.</p>
+            <div id="unmatchedContent"></div>
+        </section>
     </main>
 
     <script>
@@ -86,6 +101,7 @@
             researchAllowanceItem
         ];
         let itemData = [];
+        let unmatchedData = [];
         let sortKey = 'order';
         let sortDirection = 1;
 
@@ -96,8 +112,11 @@
             const [budgetTable, expenseTable] = await Promise.all([fetchSheet(budgetUrl), fetchSheet(expenseUrl)]);
             const budgetRows = tableRows(budgetTable).filter(row => /^\d+$/.test(row['순']));
             const expenseRows = tableRows(expenseTable);
-            itemData = buildItems(budgetRows, expenseRows);
+            const result = buildItems(budgetRows, expenseRows);
+            itemData = result.items;
+            unmatchedData = result.unmatchedRows;
             renderSortedItems();
+            renderUnmatched();
         }
 
         async function fetchSheet(url) {
@@ -116,13 +135,25 @@
         }
 
         function buildItems(budgetRows, expenseRows) {
-            const items = Object.fromEntries(budgetColumns.map((name, order) => [name, { order: order + 1, name, budget: 0, spent: 0 }]));
+            const items = Object.fromEntries(budgetColumns.map((name, order) => [name, {
+                order: order + 1, name, budget: 0, spent: 0, unmatchedCount: 0, unmatchedAmount: 0
+            }]));
             const validTeamNumbers = new Set(budgetRows.map(row => Number(row['순'])));
+            const unmatchedRows = [];
             budgetRows.forEach(row => budgetColumns.forEach(name => items[name].budget += toNumber(row[name])));
 
             expenseRows.forEach(row => {
-                if (!validTeamNumbers.has(getTeamNumber(row['제목']))) return;
                 const itemName = normalizeItem(row['산출내역']);
+                if (!items[itemName]) return;
+                if (!validTeamNumbers.has(getTeamNumber(row['제목']))) {
+                    const amount = toNumber(row['원인행위액']);
+                    items[itemName].unmatchedCount += 1;
+                    items[itemName].unmatchedAmount += amount;
+                    unmatchedRows.push({
+                        date: row['일자'], number: row['번호'], title: row['제목'], item: itemName, amount
+                    });
+                    return;
+                }
                 if (items[itemName] && itemName !== researchAllowanceItem) {
                     items[itemName].spent += toNumber(row['원인행위액']);
                 }
@@ -130,7 +161,10 @@
 
             const regularTeamCount = new Set(budgetRows.map(row => Number(row['순'])).filter(number => number > 0)).size;
             items[researchAllowanceItem].spent = regularTeamCount * fixedResearchAllowanceSpent;
-            return Object.values(items).map(item => ({ ...item, balance: item.budget - item.spent }));
+            return {
+                items: Object.values(items).map(item => ({ ...item, balance: item.budget - item.spent })),
+                unmatchedRows
+            };
         }
 
         function getTeamNumber(title = '') {
@@ -199,9 +233,12 @@
             document.getElementById('itemBody').innerHTML = items.map(item => `
                 <tr>
                     <td>${item.order}</td>
-                    <td><strong>${cleanName(item.name)}</strong></td>
+                    <td class="${item.unmatchedCount ? 'unmatched-cell' : ''}">
+                        <strong>${cleanName(item.name)}</strong>
+                        ${item.unmatchedCount ? `<div class="unmatched-note">번호 미지정 ${item.unmatchedCount}건 · ${won(item.unmatchedAmount)}</div>` : ''}
+                    </td>
                     <td class="num">${won(item.budget)}</td>
-                    <td class="num">${won(item.spent)}</td>
+                    <td class="num ${item.unmatchedCount ? 'unmatched-cell' : ''}">${won(item.spent)}</td>
                     <td class="num">${won(item.balance)}</td>
                 </tr>`).join('') + `
                 <tr class="total-row">
@@ -213,12 +250,38 @@
                 </tr>`;
         }
 
+        function renderUnmatched() {
+            const container = document.getElementById('unmatchedContent');
+            if (!unmatchedData.length) {
+                container.innerHTML = '<div class="empty-unmatched">창의연구번호 미지정 집행내역이 없습니다.</div>';
+                return;
+            }
+
+            container.innerHTML = `<div class="table-scroll"><table class="unmatched-table">
+                <thead><tr><th>일자</th><th>번호</th><th>제목</th><th>산출내역</th><th class="num">집행액</th></tr></thead>
+                <tbody>${unmatchedData.map(row => `<tr>
+                    <td>${escapeHtml(row.date)}</td>
+                    <td>${escapeHtml(row.number)}</td>
+                    <td>${escapeHtml(row.title)}</td>
+                    <td>${escapeHtml(cleanName(row.item))}</td>
+                    <td class="num">${won(row.amount)}</td>
+                </tr>`).join('')}</tbody>
+            </table></div>`;
+        }
+
         function won(value) {
             return `${value.toLocaleString()}원`;
         }
 
+        function escapeHtml(value = '') {
+            const div = document.createElement('div');
+            div.textContent = value;
+            return div.innerHTML;
+        }
+
         function showError(error) {
             document.getElementById('itemBody').innerHTML = '<tr><td colspan="5" class="error">데이터를 불러오지 못했습니다.</td></tr>';
+            document.getElementById('unmatchedContent').innerHTML = '<div class="error">미지정 내역을 불러오지 못했습니다.</div>';
             console.error(error);
         }
     </script>
