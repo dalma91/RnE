@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>예산 편성 항목별 집행 현황</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 24px; font-family: 'Malgun Gothic', sans-serif; background: #f4f7fa; color: #263238; }
+        .wrap { max-width: 1100px; margin: 0 auto; }
+        .page-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }
+        h1 { margin: 0; color: #2c3e50; font-size: 26px; }
+        .nav { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        .nav a { color: #fff; background: #3498db; padding: 9px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+        .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
+        .card { background: #fff; border-radius: 9px; padding: 16px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
+        .card-label { color: #607d8b; font-size: 14px; }
+        .card-value { margin-top: 7px; font-size: 22px; font-weight: bold; font-variant-numeric: tabular-nums; }
+        .table-scroll { overflow-x: auto; border-radius: 9px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
+        table { width: 100%; min-width: 760px; border-collapse: collapse; background: #fff; }
+        th, td { padding: 13px 15px; border-bottom: 1px solid #ddd; }
+        th { background: #34495e; color: #fff; text-align: left; cursor: pointer; user-select: none; white-space: nowrap; }
+        th:hover, th:focus { background: #46637f; outline: none; }
+        .sort-arrow { display: inline-block; width: 1em; margin-left: 4px; }
+        tbody tr:hover { background: #f5f9fc; }
+        .num { text-align: right; font-variant-numeric: tabular-nums; }
+        .total-row { background: #fcf8e3; font-weight: bold; }
+        .loading, .error { text-align: center; padding: 28px; }
+        .error { color: #c0392b; }
+        @media (max-width: 720px) {
+            body { padding: 14px; }
+            .page-header { align-items: flex-start; flex-direction: column; }
+            .nav { justify-content: flex-start; }
+            h1 { font-size: 21px; }
+            .summary { grid-template-columns: 1fr; }
+            .card-value { font-size: 19px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <div class="page-header">
+            <h1>📋 예산 편성 항목별 집행 현황</h1>
+            <nav class="nav">
+                <a href="index.html">상세 조회</a>
+                <a href="summary.html">팀별 현황</a>
+            </nav>
+        </div>
+
+        <section class="summary" id="summaryCards"></section>
+
+        <div class="table-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th data-sort="order" tabindex="0">순<span class="sort-arrow"></span></th>
+                        <th data-sort="name" tabindex="0">예산 편성 항목<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="budget" tabindex="0">예산총액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="spent" tabindex="0">집행액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="balance" tabindex="0">잔액<span class="sort-arrow"></span></th>
+                    </tr>
+                </thead>
+                <tbody id="itemBody">
+                    <tr><td colspan="5" class="loading">데이터를 불러오는 중입니다...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const budgetUrl = `https://docs.google.com/spreadsheets/d/1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
+        const expenseUrl = 'https://docs.google.com/spreadsheets/d/13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1';
+        const researchAllowanceItem = '(사업수당)연구수당';
+        const fixedResearchAllowanceSpent = 700000;
+        const budgetColumns = [
+            '(연구재료비)재료구입비',
+            '(사업활동비)재료제작비',
+            '(연구활동비)외부전문기술활용비',
+            '(연구활동비)회의비',
+            '(연구활동비)소프트웨어활용비',
+            '(연구활동비)운영물품구입비',
+            '(연구활동비)연구인력지원비(식비,간식비)',
+            '(연구활동비)연구인력지원비(학술참가비)',
+            '(연구활동비)문헌구입비',
+            '인쇄·복사·인화비',
+            researchAllowanceItem
+        ];
+        let itemData = [];
+        let sortKey = 'order';
+        let sortDirection = 1;
+
+        bindSorting();
+        loadItems().catch(showError);
+
+        async function loadItems() {
+            const [budgetTable, expenseTable] = await Promise.all([fetchSheet(budgetUrl), fetchSheet(expenseUrl)]);
+            const budgetRows = tableRows(budgetTable).filter(row => /^\d+$/.test(row['순']));
+            const expenseRows = tableRows(expenseTable);
+            itemData = buildItems(budgetRows, expenseRows);
+            renderSortedItems();
+        }
+
+        async function fetchSheet(url) {
+            const text = await fetch(`${url}&_=${Date.now()}`, { cache: 'no-store' }).then(response => response.text());
+            const match = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]+)\);/);
+            if (!match) throw new Error('시트 데이터를 분석하지 못했습니다.');
+            return JSON.parse(match[1]).table;
+        }
+
+        function tableRows(table) {
+            const headers = table.cols.map(column => (column.label || '').trim());
+            return table.rows.map(row => Object.fromEntries(headers.map((header, index) => {
+                const cell = row.c[index];
+                return [header, String(cell ? (cell.f ?? cell.v ?? '') : '').trim()];
+            }).filter(([header]) => header)));
+        }
+
+        function buildItems(budgetRows, expenseRows) {
+            const items = Object.fromEntries(budgetColumns.map((name, order) => [name, { order: order + 1, name, budget: 0, spent: 0 }]));
+            const validTeamNumbers = new Set(budgetRows.map(row => Number(row['순'])));
+            budgetRows.forEach(row => budgetColumns.forEach(name => items[name].budget += toNumber(row[name])));
+
+            expenseRows.forEach(row => {
+                if (!validTeamNumbers.has(getTeamNumber(row['제목']))) return;
+                const itemName = normalizeItem(row['산출내역']);
+                if (items[itemName] && itemName !== researchAllowanceItem) {
+                    items[itemName].spent += toNumber(row['원인행위액']);
+                }
+            });
+
+            const regularTeamCount = new Set(budgetRows.map(row => Number(row['순'])).filter(number => number > 0)).size;
+            items[researchAllowanceItem].spent = regularTeamCount * fixedResearchAllowanceSpent;
+            return Object.values(items).map(item => ({ ...item, balance: item.budget - item.spent }));
+        }
+
+        function getTeamNumber(title = '') {
+            const match = title.trim().match(/^\(창의연구\s*0*(\d+)\)/);
+            return match ? Number(match[1]) : null;
+        }
+
+        function normalizeItem(name = '') {
+            return name === '(연구활동비)인쇄·복사·인화비' ? '인쇄·복사·인화비' : name;
+        }
+
+        function cleanName(name) {
+            return name.replace(/\((연구재료비|사업활동비|연구활동비|사업수당)\)/, '');
+        }
+
+        function toNumber(value = '') {
+            return Number(String(value).replace(/[^\d-]/g, '')) || 0;
+        }
+
+        function bindSorting() {
+            document.querySelectorAll('th[data-sort]').forEach(header => {
+                const sort = () => {
+                    const key = header.dataset.sort;
+                    sortDirection = sortKey === key ? -sortDirection : 1;
+                    sortKey = key;
+                    renderSortedItems();
+                };
+                header.addEventListener('click', sort);
+                header.addEventListener('keydown', event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        sort();
+                    }
+                });
+            });
+        }
+
+        function renderSortedItems() {
+            const sorted = [...itemData].sort((a, b) => {
+                const result = sortKey === 'name'
+                    ? cleanName(a.name).localeCompare(cleanName(b.name), 'ko')
+                    : a[sortKey] - b[sortKey];
+                return result * sortDirection;
+            });
+            renderItems(sorted);
+            document.querySelectorAll('th[data-sort]').forEach(header => {
+                const selected = header.dataset.sort === sortKey;
+                header.querySelector('.sort-arrow').textContent = selected ? (sortDirection === 1 ? '▲' : '▼') : '';
+                header.setAttribute('aria-sort', selected ? (sortDirection === 1 ? 'ascending' : 'descending') : 'none');
+            });
+        }
+
+        function renderItems(items) {
+            const totals = itemData.reduce((sum, item) => ({
+                budget: sum.budget + item.budget,
+                spent: sum.spent + item.spent,
+                balance: sum.balance + item.balance
+            }), { budget: 0, spent: 0, balance: 0 });
+
+            document.getElementById('summaryCards').innerHTML = [
+                ['예산총액', won(totals.budget)],
+                ['집행액', won(totals.spent)],
+                ['잔액', won(totals.balance)]
+            ].map(([label, value]) => `<div class="card"><div class="card-label">${label}</div><div class="card-value">${value}</div></div>`).join('');
+
+            document.getElementById('itemBody').innerHTML = items.map(item => `
+                <tr>
+                    <td>${item.order}</td>
+                    <td><strong>${cleanName(item.name)}</strong></td>
+                    <td class="num">${won(item.budget)}</td>
+                    <td class="num">${won(item.spent)}</td>
+                    <td class="num">${won(item.balance)}</td>
+                </tr>`).join('') + `
+                <tr class="total-row">
+                    <td>-</td>
+                    <td>합계</td>
+                    <td class="num">${won(totals.budget)}</td>
+                    <td class="num">${won(totals.spent)}</td>
+                    <td class="num">${won(totals.balance)}</td>
+                </tr>`;
+        }
+
+        function won(value) {
+            return `${value.toLocaleString()}원`;
+        }
+
+        function showError(error) {
+            document.getElementById('itemBody').innerHTML = '<tr><td colspan="5" class="error">데이터를 불러오지 못했습니다.</td></tr>';
+            console.error(error);
+        }
+    </script>
+</body>
+</html>
