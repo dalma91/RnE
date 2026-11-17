@@ -137,6 +137,7 @@
                 return [number, {
                     number,
                     teacher: row['지도교사'],
+                    allowanceBudget: toNumber(row[researchAllowanceItem]),
                     items: Object.fromEntries(budgetItems.map(item => [item, {
                         budget: toNumber(row[item]),
                         spent: 0
@@ -241,14 +242,26 @@
                 };
             }, { budget: 0, spent: 0 });
             const itemName = selectedItem === 'all' ? '전체 (연구수당 제외)' : cleanBudgetItemName(selectedItem);
+            const overallBudgets = teams.reduce((sum, team) => {
+                const withoutAllowance = allFiguresWithoutAllowance(team).budget;
+                return {
+                    withAllowance: sum.withAllowance + withoutAllowance + team.allowanceBudget,
+                    withoutAllowance: sum.withoutAllowance + withoutAllowance
+                };
+            }, { withAllowance: 0, withoutAllowance: 0 });
 
-            document.getElementById('summaryCards').innerHTML = [
+            const cards = [
                 ['전체 팀', `${teamCount}팀`],
-                [`${itemName} 배정예산`, won(totals.budget)],
+                ['전체예산 (수당 포함)', won(overallBudgets.withAllowance)],
+                ['전체예산 (수당 제외)', won(overallBudgets.withoutAllowance)]
+            ];
+            if (selectedItem !== 'all') cards.push([`${itemName} 배정예산`, won(totals.budget)]);
+            cards.push(
                 ['총 집행액', won(totals.spent)],
                 ['총 잔액', won(totals.budget - totals.spent)],
                 ['집행비율', rate(totals.spent, totals.budget), 'rate']
-            ].map(([label, value, className = '']) => `<div class="card"><div class="card-label">${label}</div><div class="card-value ${className}">${value}</div></div>`).join('');
+            );
+            document.getElementById('summaryCards').innerHTML = cards.map(([label, value, className = '']) => `<div class="card"><div class="card-label">${label}</div><div class="card-value ${className}">${value}</div></div>`).join('');
 
             document.getElementById('summaryBody').innerHTML = teams.map(team => {
                 const figures = selectedFigures(team);
@@ -273,6 +286,10 @@
 
         function selectedFigures(team) {
             if (selectedItem !== 'all') return team.items[selectedItem];
+            return allFiguresWithoutAllowance(team);
+        }
+
+        function allFiguresWithoutAllowance(team) {
             return Object.values(team.items).reduce((sum, item) => ({
                 budget: sum.budget + item.budget,
                 spent: sum.spent + item.spent
