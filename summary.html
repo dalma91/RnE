@@ -280,7 +280,7 @@
         }
 
         function executionRate(figures) {
-            return figures.budget ? figures.spent / figures.budget : 0;
+            return figures.budget ? figures.spent / figures.budget : 1;
         }
 
         function won(value) {
@@ -288,7 +288,7 @@
         }
 
         function rate(spent, budget) {
-            return `${(budget ? spent / budget * 100 : 0).toFixed(2)}%`;
+            return `${(budget ? spent / budget * 100 : 100).toFixed(2)}%`;
         }
 
         function escapeHtml(value = '') {
