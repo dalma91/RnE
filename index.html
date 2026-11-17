@@ -109,7 +109,7 @@
                     <th>번호</th>
                     <th class="expense-title">제목</th>
                     <th>산출내역</th>
-                    <th class="num-col">집행액</th>
+                    <th class="num-col">팀 배분액</th>
                 </tr>
             </thead>
             <tbody id="expenseBody"></tbody>
@@ -203,7 +203,7 @@
                 number: row['번호'],
                 title: row['제목'],
                 amount: parseAmount(row['원인행위액']),
-                item: row['산출내역']
+                item: normalizeItem(row['산출내역'])
             })).filter(row => row.title);
         }
 
@@ -211,13 +211,23 @@
             return Number(String(value).replace(/[^\d-]/g, '')) || 0;
         }
 
-        function getTeamNumber(title) {
-            const match = title.trim().match(/^\(창의연구\s*0*(\d+)\)/);
-            return match ? Number(match[1]) : null;
+        function normalizeItem(item = '') {
+            return item === '(연구활동비)인쇄·복사·인화비' ? '인쇄·복사·인화비' : item;
+        }
+
+        function getTeamNumbers(title = '') {
+            const match = title.match(/\(창의연구([^)]*)\)/);
+            if (!match) return [];
+            return [...new Set((match[1].match(/\d+/g) || []).map(Number))];
         }
 
         function getTeamExpenses(teamNumber) {
-            return expenseData.filter(row => getTeamNumber(row.title) === Number(teamNumber));
+            const targetNumber = Number(teamNumber);
+            return expenseData.flatMap(row => {
+                const teamNumbers = getTeamNumbers(row.title);
+                if (!teamNumbers.includes(targetNumber)) return [];
+                return [{ ...row, amount: row.amount / teamNumbers.length }];
+            });
         }
 
         function showLoadError(error) {
@@ -396,7 +406,7 @@
         }
 
         function formatRate(spent, budget) {
-            return `${(budget ? spent / budget * 100 : 0).toFixed(2)}%`;
+            return `${(budget ? spent / budget * 100 : 100).toFixed(2)}%`;
         }
 
         function renderExpenses(teamNumber) {
@@ -409,13 +419,14 @@
 
             const expenses = getTeamExpenses(teamNumber);
             const allowance = Number(teamNumber) === 0 ? 0 : fixedResearchAllowanceSpent;
-            const total = expenses
+            const actualSpent = expenses
                 .filter(row => row.item !== researchAllowanceItem)
-                .reduce((sum, row) => sum + row.amount, allowance);
+                .reduce((sum, row) => sum + row.amount, 0);
+            const total = actualSpent + allowance;
             const label = Number(teamNumber) === 0 ? '총괄담당자' : `창의연구${Number(teamNumber)}`;
-            const allowanceNote = allowance ? ' (연구수당 700,000원 포함)' : '';
+            const allowanceText = allowance ? ` · 연구수당 ${allowance.toLocaleString()}원` : '';
             document.getElementById('expenseSection').classList.remove('hidden');
-            document.getElementById('expenseSummary').textContent = `${label} · ${expenses.length}건 · 총 ${total.toLocaleString()}원${allowanceNote}`;
+            document.getElementById('expenseSummary').textContent = `${label} · ${expenses.length}건 · 실제 집행액 ${actualSpent.toLocaleString()}원${allowanceText} · 집행총액 ${total.toLocaleString()}원`;
             document.getElementById('expenseBody').innerHTML = expenses.length
                 ? expenses.map(row => `<tr>
                     <td>${escapeHtml(row.date)}</td>

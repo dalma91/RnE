@@ -77,7 +77,7 @@
 
         <section class="unmatched-section">
             <h2>⚠️ 창의연구번호 미지정 집행내역</h2>
-            <p class="unmatched-guide">제목이 <strong>(창의연구번호)</strong>로 시작하지 않거나 예산표에 없는 번호인 내역입니다. 해당 비목 셀도 연한 붉은색으로 표시됩니다.</p>
+            <p class="unmatched-guide">제목에 <strong>(창의연구번호)</strong>가 없거나 예산표에 없는 번호가 적힌 내역입니다. 해당 비목 셀도 연한 붉은색으로 표시됩니다.</p>
             <div id="unmatchedContent"></div>
         </section>
     </main>
@@ -145,7 +145,8 @@
             expenseRows.forEach(row => {
                 const itemName = normalizeItem(row['산출내역']);
                 if (!items[itemName]) return;
-                if (!validTeamNumbers.has(getTeamNumber(row['제목']))) {
+                const teamNumbers = getTeamNumbers(row['제목']);
+                if (!teamNumbers.length || !teamNumbers.every(number => validTeamNumbers.has(number))) {
                     const amount = toNumber(row['원인행위액']);
                     items[itemName].unmatchedCount += 1;
                     items[itemName].unmatchedAmount += amount;
@@ -167,9 +168,10 @@
             };
         }
 
-        function getTeamNumber(title = '') {
-            const match = title.trim().match(/^\(창의연구\s*0*(\d+)\)/);
-            return match ? Number(match[1]) : null;
+        function getTeamNumbers(title = '') {
+            const match = title.match(/\(창의연구([^)]*)\)/);
+            if (!match) return [];
+            return [...new Set((match[1].match(/\d+/g) || []).map(Number))];
         }
 
         function normalizeItem(name = '') {
