@@ -12,12 +12,16 @@
         h1 { margin: 0; color: #2c3e50; font-size: 26px; }
         .nav { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
         .back-link { color: #fff; background: #3498db; padding: 9px 14px; border-radius: 6px; text-decoration: none; font-weight: bold; }
+        .filter-panel { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 14px 16px; background: #fff; border-radius: 9px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
+        .filter-panel label { color: #455a64; font-weight: bold; white-space: nowrap; }
+        .filter-panel select { width: min(100%, 430px); padding: 10px 38px 10px 12px; border: 1px solid #b0bec5; border-radius: 6px; background: #fff; color: #263238; font: inherit; cursor: pointer; }
+        .filter-panel select:focus { border-color: #3498db; outline: 2px solid rgba(52,152,219,.2); }
         .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
         .card { background: #fff; border-radius: 9px; padding: 16px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
         .card-label { color: #607d8b; font-size: 14px; }
         .card-value { margin-top: 7px; font-size: 22px; font-weight: bold; }
         .table-scroll { overflow-x: auto; border-radius: 9px; box-shadow: 0 2px 7px rgba(0,0,0,.08); }
-        table { width: 100%; min-width: 960px; border-collapse: collapse; background: #fff; }
+        table { width: 100%; min-width: 840px; border-collapse: collapse; background: #fff; }
         th, td { padding: 13px 15px; border-bottom: 1px solid #ddd; }
         th { background: #34495e; color: #fff; text-align: left; }
         th[data-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
@@ -35,6 +39,8 @@
             h1 { font-size: 21px; }
             .summary { grid-template-columns: repeat(2, 1fr); }
             .card-value { font-size: 18px; }
+            .filter-panel { align-items: stretch; flex-direction: column; gap: 8px; }
+            .filter-panel select { width: 100%; }
         }
     </style>
 </head>
@@ -48,6 +54,13 @@
             </nav>
         </div>
 
+        <section class="filter-panel" aria-label="예산 항목 선택">
+            <label for="budgetItemSelect">예산 항목</label>
+            <select id="budgetItemSelect" disabled>
+                <option>데이터를 불러오는 중입니다...</option>
+            </select>
+        </section>
+
         <section class="summary" id="summaryCards"></section>
 
         <div class="table-scroll">
@@ -56,15 +69,14 @@
                     <tr>
                         <th data-sort="number" tabindex="0">팀<span class="sort-arrow"></span></th>
                         <th data-sort="teacher" tabindex="0">지도교사<span class="sort-arrow"></span></th>
-                        <th class="num" data-sort="budget" tabindex="0">예산총액<span class="sort-arrow"></span></th>
+                        <th class="num" data-sort="budget" tabindex="0">배정예산<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="spent" tabindex="0">집행액<span class="sort-arrow"></span></th>
-                        <th class="num" data-sort="allowance" tabindex="0">수당<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="balance" tabindex="0">잔액<span class="sort-arrow"></span></th>
                         <th class="num" data-sort="rate" tabindex="0">집행비율<span class="sort-arrow"></span></th>
                     </tr>
                 </thead>
                 <tbody id="summaryBody">
-                    <tr><td colspan="7" class="loading">데이터를 불러오는 중입니다...</td></tr>
+                    <tr><td colspan="6" class="loading">데이터를 불러오는 중입니다...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -74,8 +86,20 @@
         const budgetUrl = `https://docs.google.com/spreadsheets/d/1z94NxZFoei4rP7eqt-kN3pofKKAM9_jOylRoqT6PZPE/gviz/tq?tqx=out:json&sheet=${encodeURIComponent('팀별예산')}`;
         const expenseUrl = 'https://docs.google.com/spreadsheets/d/13DLxXbjBm0Y3l19msIVp3wOjSD7zExBwuLU6oje0F8o/gviz/tq?tqx=out:json&gid=693256636&range=A3:M&headers=1';
         const researchAllowanceItem = '(사업수당)연구수당';
-        const fixedResearchAllowanceSpent = 700000;
+        const budgetItems = [
+            '(연구재료비)재료구입비',
+            '(사업활동비)재료제작비',
+            '(연구활동비)외부전문기술활용비',
+            '(연구활동비)회의비',
+            '(연구활동비)소프트웨어활용비',
+            '(연구활동비)운영물품구입비',
+            '(연구활동비)연구인력지원비(식비,간식비)',
+            '(연구활동비)연구인력지원비(학술참가비)',
+            '(연구활동비)문헌구입비',
+            '인쇄·복사·인화비'
+        ];
         let teamData = [];
+        let selectedItem = 'all';
         let sortKey = 'number';
         let sortDirection = 1;
 
@@ -87,6 +111,7 @@
             const teams = buildTeams(tableRows(budgetTable));
             applyExpenses(teams, tableRows(expenseTable));
             teamData = Object.values(teams);
+            setupBudgetItemSelect();
             renderSortedSummary();
         }
 
@@ -112,25 +137,52 @@
                 return [number, {
                     number,
                     teacher: row['지도교사'],
-                    budget: toNumber(row['팀별 연구비']),
-                    spent: 0,
-                    allowance: number === 0 ? 0 : fixedResearchAllowanceSpent
+                    items: Object.fromEntries(budgetItems.map(item => [item, {
+                        budget: toNumber(row[item]),
+                        spent: 0
+                    }]))
                 }];
             }));
         }
 
         function applyExpenses(teams, rows) {
             rows.forEach(row => {
-                const number = getTeamNumber(row['제목']);
-                if (teams[number] && row['산출내역'] !== researchAllowanceItem) {
-                    teams[number].spent += toNumber(row['원인행위액']);
-                }
+                const item = normalizeBudgetItem(row['산출내역']);
+                if (!budgetItems.includes(item) || item === researchAllowanceItem) return;
+
+                const numbers = getTeamNumbers(row['제목']).filter(number => teams[number]);
+                if (!numbers.length) return;
+
+                const amountPerTeam = toNumber(row['원인행위액']) / numbers.length;
+                numbers.forEach(number => teams[number].items[item].spent += amountPerTeam);
             });
         }
 
-        function getTeamNumber(title = '') {
-            const match = title.trim().match(/^\(창의연구\s*0*(\d+)\)/);
-            return match ? Number(match[1]) : null;
+        function getTeamNumbers(title = '') {
+            const match = title.match(/\(창의연구([^)]*)\)/);
+            if (!match) return [];
+            return [...new Set((match[1].match(/\d+/g) || []).map(Number))];
+        }
+
+        function normalizeBudgetItem(item = '') {
+            return item === '(연구활동비)인쇄·복사·인화비' ? '인쇄·복사·인화비' : item;
+        }
+
+        function cleanBudgetItemName(item) {
+            return item.replace(/^\([^)]*\)/, '');
+        }
+
+        function setupBudgetItemSelect() {
+            const select = document.getElementById('budgetItemSelect');
+            select.innerHTML = [
+                '<option value="all">전체 (연구수당 제외)</option>',
+                ...budgetItems.map(item => `<option value="${escapeHtml(item)}">${escapeHtml(cleanBudgetItemName(item))}</option>`)
+            ].join('');
+            select.disabled = false;
+            select.addEventListener('change', event => {
+                selectedItem = event.target.value;
+                renderSortedSummary();
+            });
         }
 
         function toNumber(value = '') {
@@ -167,9 +219,13 @@
         }
 
         function compareTeams(a, b) {
-            const value = team => sortKey === 'balance' ? team.budget - executedTotal(team)
-                : sortKey === 'rate' ? executionRate(team)
-                : team[sortKey];
+            const value = team => {
+                const figures = selectedFigures(team);
+                if (sortKey === 'balance') return figures.budget - figures.spent;
+                if (sortKey === 'rate') return executionRate(figures);
+                if (sortKey === 'budget' || sortKey === 'spent') return figures[sortKey];
+                return team[sortKey];
+            };
             return sortKey === 'teacher'
                 ? String(value(a)).localeCompare(String(value(b)), 'ko')
                 : value(a) - value(b);
@@ -177,49 +233,54 @@
 
         function renderSummary(teams) {
             const teamCount = teams.filter(team => team.number > 0).length;
-            const totals = teams.reduce((sum, team) => ({
-                budget: sum.budget + team.budget,
-                spent: sum.spent + team.spent,
-                allowance: sum.allowance + team.allowance
-            }), { budget: 0, spent: 0, allowance: 0 });
-            const totalExecuted = totals.spent + totals.allowance;
+            const totals = teams.reduce((sum, team) => {
+                const figures = selectedFigures(team);
+                return {
+                    budget: sum.budget + figures.budget,
+                    spent: sum.spent + figures.spent
+                };
+            }, { budget: 0, spent: 0 });
+            const itemName = selectedItem === 'all' ? '전체 (연구수당 제외)' : cleanBudgetItemName(selectedItem);
 
             document.getElementById('summaryCards').innerHTML = [
                 ['전체 팀', `${teamCount}팀`],
-                ['총 예산', won(totals.budget)],
+                [`${itemName} 배정예산`, won(totals.budget)],
                 ['총 집행액', won(totals.spent)],
-                ['총 수당', won(totals.allowance)],
-                ['총 잔액', won(totals.budget - totalExecuted)],
-                ['전체 예산 집행 비율', rate(totals.spent, totals.budget - totals.allowance), 'rate']
+                ['총 잔액', won(totals.budget - totals.spent)],
+                ['집행비율', rate(totals.spent, totals.budget), 'rate']
             ].map(([label, value, className = '']) => `<div class="card"><div class="card-label">${label}</div><div class="card-value ${className}">${value}</div></div>`).join('');
 
-            document.getElementById('summaryBody').innerHTML = teams.map(team => `
+            document.getElementById('summaryBody').innerHTML = teams.map(team => {
+                const figures = selectedFigures(team);
+                return `
                 <tr>
                     <td><strong>${team.number === 0 ? '총괄담당자' : `창의연구${team.number}`}</strong></td>
                     <td>${escapeHtml(team.teacher)}</td>
-                    <td class="num">${won(team.budget)}</td>
-                    <td class="num">${won(team.spent)}</td>
-                    <td class="num">${won(team.allowance)}</td>
-                    <td class="num">${won(team.budget - executedTotal(team))}</td>
-                    <td class="num rate">${rate(team.spent, team.budget - team.allowance)}</td>
-                </tr>`).join('') + `
+                    <td class="num">${won(figures.budget)}</td>
+                    <td class="num">${won(figures.spent)}</td>
+                    <td class="num">${won(figures.budget - figures.spent)}</td>
+                    <td class="num rate">${rate(figures.spent, figures.budget)}</td>
+                </tr>`;
+            }).join('') + `
                 <tr class="total-row">
                     <td colspan="2">합계</td>
                     <td class="num">${won(totals.budget)}</td>
                     <td class="num">${won(totals.spent)}</td>
-                    <td class="num">${won(totals.allowance)}</td>
-                    <td class="num">${won(totals.budget - totalExecuted)}</td>
-                    <td class="num rate">${rate(totals.spent, totals.budget - totals.allowance)}</td>
+                    <td class="num">${won(totals.budget - totals.spent)}</td>
+                    <td class="num rate">${rate(totals.spent, totals.budget)}</td>
                 </tr>`;
         }
 
-        function executedTotal(team) {
-            return team.spent + team.allowance;
+        function selectedFigures(team) {
+            if (selectedItem !== 'all') return team.items[selectedItem];
+            return Object.values(team.items).reduce((sum, item) => ({
+                budget: sum.budget + item.budget,
+                spent: sum.spent + item.spent
+            }), { budget: 0, spent: 0 });
         }
 
-        function executionRate(team) {
-            const executableBudget = team.budget - team.allowance;
-            return executableBudget ? team.spent / executableBudget : 0;
+        function executionRate(figures) {
+            return figures.budget ? figures.spent / figures.budget : 0;
         }
 
         function won(value) {
@@ -237,7 +298,7 @@
         }
 
         function showError(error) {
-            document.getElementById('summaryBody').innerHTML = '<tr><td colspan="7" class="error">데이터를 불러오지 못했습니다.</td></tr>';
+            document.getElementById('summaryBody').innerHTML = '<tr><td colspan="6" class="error">데이터를 불러오지 못했습니다.</td></tr>';
             console.error(error);
         }
     </script>
